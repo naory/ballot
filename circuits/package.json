@@ -1,0 +1,9 @@
+{
+  "name": "@ballot/circuits",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "compile": "bash scripts/compile.sh",
+    "setup": "bash scripts/setup.sh"
+  }
+}

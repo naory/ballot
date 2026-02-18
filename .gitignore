@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Circuits build artifacts
+circuits/build/
+circuits/*.r1cs
+circuits/*.wasm
+circuits/*.zkey
+circuits/*.vkey.json
+circuits/pot*.ptau
+
+# SQLite
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
