@@ -26,6 +26,9 @@ importers:
       next:
         specifier: ^14.2.0
         version: 14.2.35(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      poseidon-lite:
+        specifier: ^0.2.1
+        version: 0.2.1
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -58,7 +61,11 @@ importers:
         specifier: ^5.5.0
         version: 5.9.3
 
-  circuits: {}
+  circuits:
+    dependencies:
+      circomlib:
+        specifier: ^2.0.5
+        version: 2.0.5
 
   indexer:
     dependencies:
@@ -92,6 +99,10 @@ importers:
         version: 5.9.3
 
   packages/core:
+    dependencies:
+      poseidon-lite:
+        specifier: ^0.2.1
+        version: 0.2.1
     devDependencies:
       typescript:
         specifier: ^5.5.0
@@ -1115,6 +1126,9 @@ packages:
     resolution: {integrity: sha512-ACagpQ7zBRLKDl5xRZ4KpmYIcZDUjOiNRuxvXLqhnnlLSVY1Dbvh73TI853nqoR0oEbihtWmMSjgc5f+pXf/jQ==}
     hasBin: true
 
+  circomlib@2.0.5:
+    resolution: {integrity: sha512-O7NQ8OS+J4eshBuoy36z/TwQU0YHw8W3zxZcs4hVwpEll3e4hDm3mgkIPqItN8FDeLEKZFK3YeT/+k8TiLF3/A==}
+
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
@@ -1947,6 +1961,9 @@ packages:
   pirates@4.0.7:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
+
+  poseidon-lite@0.2.1:
+    resolution: {integrity: sha512-xIr+G6HeYfOhCuswdqcFpSX47SPhm0EpisWJ6h7fHlWwaVIvH3dLnejpatrtw6Xc6HaLrpq05y7VRfvDmDGIog==}
 
   postcss-import@15.1.0:
     resolution: {integrity: sha512-hpr+J05B2FVYUAXHeK1YyI267J/dDDhMU6B6civm8hSY1jYJnBXxzKDKDswzJmtLHryrjhnDjqqp/49t8FALew==}
@@ -3669,6 +3686,8 @@ snapshots:
     dependencies:
       ffjavascript: 0.3.1
 
+  circomlib@2.0.5: {}
+
   client-only@0.0.1: {}
 
   cliui@8.0.1:
@@ -4590,6 +4609,8 @@ snapshots:
       thread-stream: 3.1.0
 
   pirates@4.0.7: {}
+
+  poseidon-lite@0.2.1: {}
 
   postcss-import@15.1.0(postcss@8.5.6):
     dependencies:

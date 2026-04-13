@@ -1,37 +1,55 @@
 pragma circom 2.1.6;
 
-// Placeholder vote circuit
-// Proves:
-//   1. Membership — the voter owns an NFT in the eligible set (Merkle proof)
-//   2. Nullifier — a deterministic nullifier derived from (serial, secret) so
-//      the same NFT cannot vote twice, but the serial is not revealed.
-//   3. Vote commitment — the chosen option index is committed.
-//
-// Public inputs:  merkleRoot, nullifier, choiceIndex
-// Private inputs: serial, secret, pathElements[], pathIndices[]
-//
-// TODO: Implement Poseidon hashing and wire up membership sub-circuit.
+include "circomlib/circuits/poseidon.circom";
+include "circomlib/circuits/bitify.circom";
+include "./lib/merkle.circom";
 
+// Proves all three voting properties in one circuit:
+//   1. Membership   — serial is in the eligible NFT Merkle tree
+//   2. Nullifier    — deterministic nullifier derived from (serial, secret)
+//                     so the same NFT cannot vote twice without revealing it
+//   3. Choice range — choiceIndex is a valid 8-bit value (0–255)
+//
+// Public inputs:  merkleRoot, nullifierHash, choiceIndex
+// Private inputs: serial, secret, pathElements[], pathIndices[]
 template Vote(depth) {
-    // Public
+    // --- Public ---
     signal input merkleRoot;
     signal input nullifierHash;
     signal input choiceIndex;
 
-    // Private
+    // --- Private ---
     signal input serial;
     signal input secret;
     signal input pathElements[depth];
     signal input pathIndices[depth];
 
-    signal output validVote;
+    // 1. Compute leaf = Poseidon(serial)
+    component leafHash = Poseidon(1);
+    leafHash.inputs[0] <== serial;
 
-    // Placeholder constraint — real implementation will:
-    //   1. Compute leaf = Poseidon(serial)
-    //   2. Walk Merkle path and assert root == merkleRoot
-    //   3. Compute nullifier = Poseidon(serial, secret) and assert == nullifierHash
-    //   4. Range-check choiceIndex
-    validVote <== 1;
+    // 2. Verify Merkle membership
+    component merkle = MerkleVerifier(depth);
+    merkle.leaf <== leafHash.out;
+    for (var i = 0; i < depth; i++) {
+        merkle.pathElements[i] <== pathElements[i];
+        merkle.pathIndices[i]  <== pathIndices[i];
+    }
+    merkle.root === merkleRoot;
+
+    // 3. Verify nullifier: Poseidon(serial, secret) must equal the declared nullifierHash.
+    //    The nullifier is public so the indexer can detect double-votes,
+    //    but serial and secret stay private so the voter is not identified.
+    component nullifier = Poseidon(2);
+    nullifier.inputs[0] <== serial;
+    nullifier.inputs[1] <== secret;
+    nullifier.out === nullifierHash;
+
+    // 4. Range-check choiceIndex: constrain to 8 bits (0 ≤ choiceIndex < 256).
+    //    The indexer enforces the tighter bound (< numChoices), but this
+    //    prevents a malformed proof from encoding an absurd choice value.
+    component bits = Num2Bits(8);
+    bits.in <== choiceIndex;
 }
 
 component main {public [merkleRoot, nullifierHash, choiceIndex]} = Vote(20);

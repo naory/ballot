@@ -3,7 +3,11 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "install-deps": "npm install",
     "compile": "bash scripts/compile.sh",
     "setup": "bash scripts/setup.sh"
+  },
+  "dependencies": {
+    "circomlib": "^2.0.5"
   }
 }
