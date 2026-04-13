@@ -33,6 +33,9 @@ const subscriber = new HCSSubscriber(
         startsAt:    poll.startsAt,
         endsAt:      poll.endsAt,
       });
+      // Subscribe to the new topic so votes arriving after this poll_created
+      // message are processed. (Existing polls are subscribed on startup.)
+      subscriber.subscribe(topicId);
     }
 
     if (msg.type === "vote") {

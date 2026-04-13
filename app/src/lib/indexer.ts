@@ -65,10 +65,6 @@ export async function fetchPoll(topicId: string): Promise<PollWithTally | null> 
 
 /**
  * Fetch the Merkle proof for a voter's NFT serial in a given poll.
- * Returns null if the serial is not in the eligible set or the indexer is unreachable.
- */
-/**
- * Fetch the Merkle proof for a voter's NFT serial in a given poll.
  * Throws if the serial is not eligible or the indexer is unreachable.
  */
 export async function fetchMerkleProof(
