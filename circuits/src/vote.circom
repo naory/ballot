@@ -52,4 +52,5 @@ template Vote(depth) {
     bits.in <== choiceIndex;
 }
 
-component main {public [merkleRoot, nullifierHash, choiceIndex]} = Vote(20);
+// depth=10 matches TREE_DEPTH in packages/core/src/merkle.ts (supports ≤1,024 NFTs)
+component main {public [merkleRoot, nullifierHash, choiceIndex]} = Vote(10);

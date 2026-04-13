@@ -7,6 +7,16 @@
 
 import { poseidon1, poseidon2 } from "poseidon-lite";
 
+/**
+ * Fixed tree depth used by the ZK circuit.
+ * Supports up to 2^TREE_DEPTH = 1,024 eligible NFTs per poll.
+ * Must match the `depth` parameter in vote.circom and membership.circom.
+ */
+export const TREE_DEPTH = 10;
+
+/** Canonical empty-leaf value — Poseidon(0). Used to pad fixed-depth trees. */
+const ZERO_LEAF = poseidon1([0n]);
+
 /** Hash a leaf from an NFT serial number string → BigInt field element */
 export function hashLeaf(serial: string): bigint {
   return poseidon1([BigInt(serial)]);
@@ -82,6 +92,26 @@ export function getProof(
   }
 
   return proof;
+}
+
+/**
+ * Build a fixed-depth Merkle tree padded to exactly 2^TREE_DEPTH leaves.
+ * Positions beyond the provided leaves are filled with ZERO_LEAF.
+ * This guarantees proofs always have exactly TREE_DEPTH elements — required
+ * for the ZK circuit which expects a fixed-length pathElements array.
+ *
+ * Throws if more than 2^TREE_DEPTH leaf hashes are provided.
+ */
+export function buildFixedTree(leafHashes: bigint[]): bigint[][] {
+  const size = 2 ** TREE_DEPTH;
+  if (leafHashes.length > size) {
+    throw new Error(
+      `Too many leaves: ${leafHashes.length} exceeds capacity ${size} (2^${TREE_DEPTH})`
+    );
+  }
+  const padded = [...leafHashes];
+  while (padded.length < size) padded.push(ZERO_LEAF);
+  return buildTree(padded);
 }
 
 /** Verify a Merkle proof against a root (off-circuit check, e.g. in tests) */
