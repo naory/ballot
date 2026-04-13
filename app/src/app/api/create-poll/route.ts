@@ -110,11 +110,13 @@ export async function POST(req: NextRequest) {
   try {
     client = getOperatorClient();
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
       {
         error:
           "Hedera operator credentials not configured on server. " +
-          "Set HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY env vars.",
+          "Set HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY env vars. " +
+          `(${detail})`,
       },
       { status: 503 }
     );

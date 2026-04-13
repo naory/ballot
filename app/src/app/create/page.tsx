@@ -77,8 +77,30 @@ export default function CreatePollPage() {
 
       setStatus({ kind: "done", topicId, holderCount });
 
-      // Give the indexer a moment to process the HCS message before redirecting
-      setTimeout(() => router.push(`/poll/${encodeURIComponent(topicId)}`), 2000);
+      // Poll the indexer until the poll record is available (HCS consensus ~3-5s,
+      // indexer polling interval ~5s), then redirect. Give up after 30s.
+      const indexerBase =
+        process.env.NEXT_PUBLIC_INDEXER_URL || "http://localhost:4000";
+      const deadline = Date.now() + 30_000;
+      const waitForPoll = async () => {
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2_000));
+          try {
+            const check = await fetch(
+              `${indexerBase}/api/polls/${encodeURIComponent(topicId)}`
+            );
+            if (check.ok) {
+              router.push(`/poll/${encodeURIComponent(topicId)}`);
+              return;
+            }
+          } catch {
+            // indexer not yet reachable — keep waiting
+          }
+        }
+        // Timed out — redirect anyway and let the poll page handle 404
+        router.push(`/poll/${encodeURIComponent(topicId)}`);
+      };
+      waitForPoll();
     } catch (err) {
       setStatus({
         kind: "error",
