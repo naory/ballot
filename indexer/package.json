@@ -6,19 +6,21 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@ballot/core": "workspace:*",
     "better-sqlite3": "^11.7.0",
     "graphql": "^16.9.0",
     "graphql-yoga": "^5.10.0",
-    "snarkjs": "^0.7.4",
-    "@ballot/core": "workspace:*"
+    "snarkjs": "^0.7.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.14.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.4"
   }
 }
