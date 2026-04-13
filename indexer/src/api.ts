@@ -129,8 +129,12 @@ async function handleRest(
     }
 
     try {
-      const tokenId = row.token_id as string;
-      const serials = await fetchNftSerials(tokenId);
+      // Prefer the snapshot stored at poll creation time; fall back to live
+      // Mirror Node state only for polls created before Phase 3.
+      const storedSerials = row.serials
+        ? (JSON.parse(row.serials as string) as string[])
+        : null;
+      const serials = storedSerials ?? await fetchNftSerials(row.token_id as string);
 
       const idx = serials.indexOf(serial);
       if (idx === -1) {

@@ -18,6 +18,24 @@ export function getReadOnlyClient(): Client {
   return Client.forTestnet();
 }
 
+/**
+ * Get a Hedera client with operator credentials for write operations.
+ * Server-side only — reads HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY env vars.
+ * Throws if either env var is missing.
+ */
+export function getOperatorClient(): Client {
+  const operatorId = process.env.HEDERA_OPERATOR_ID;
+  const operatorKey = process.env.HEDERA_OPERATOR_KEY;
+  if (!operatorId || !operatorKey) {
+    throw new Error(
+      "HEDERA_OPERATOR_ID and HEDERA_OPERATOR_KEY must be set for write operations"
+    );
+  }
+  const client = Client.forTestnet();
+  client.setOperator(operatorId, operatorKey);
+  return client;
+}
+
 /** Create an HCS topic for a new poll (requires operator credentials — server action) */
 export async function createPollTopic(
   client: Client,

@@ -29,7 +29,10 @@ export async function fetchNftHolders(
   while (url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Mirror Node error: ${res.status}`);
-    const data = await res.json();
+    const data = (await res.json()) as {
+      nfts: MirrorNft[];
+      links?: { next?: string };
+    };
     nfts.push(...data.nfts);
     url = data.links?.next ? `${MIRROR_BASE}${data.links.next}` : null;
   }
