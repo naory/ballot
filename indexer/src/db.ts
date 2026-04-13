@@ -28,6 +28,7 @@ function migrate(db: Database.Database): void {
       choices     TEXT NOT NULL, -- JSON array
       token_id    TEXT NOT NULL,
       merkle_root TEXT NOT NULL,
+      serials     TEXT,          -- JSON array of NFT serial strings (snapshot)
       starts_at   TEXT NOT NULL,
       ends_at     TEXT NOT NULL,
       creator     TEXT,
@@ -49,6 +50,13 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_votes_topic ON votes(topic_id);
     CREATE INDEX IF NOT EXISTS idx_votes_nullifier ON votes(nullifier);
   `);
+
+  // Add serials column to existing DBs (idempotent — silently ignored if already present)
+  try {
+    db.exec("ALTER TABLE polls ADD COLUMN serials TEXT");
+  } catch {
+    // Column already exists — nothing to do
+  }
 }
 
 /** Insert a poll record */
@@ -59,14 +67,16 @@ export function insertPoll(poll: {
   choices: string[];
   tokenId: string;
   merkleRoot: string;
+  serials?: string[];
   startsAt: string;
   endsAt: string;
   creator?: string;
 }): void {
   const db = getDb();
   db.prepare(`
-    INSERT OR IGNORE INTO polls (topic_id, title, description, choices, token_id, merkle_root, starts_at, ends_at, creator)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO polls
+      (topic_id, title, description, choices, token_id, merkle_root, serials, starts_at, ends_at, creator)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     poll.topicId,
     poll.title,
@@ -74,6 +84,7 @@ export function insertPoll(poll: {
     JSON.stringify(poll.choices),
     poll.tokenId,
     poll.merkleRoot,
+    poll.serials ? JSON.stringify(poll.serials) : null,
     poll.startsAt,
     poll.endsAt,
     poll.creator ?? null

@@ -74,4 +74,11 @@ export interface HCSPollMessage {
   merkleRoot: string;
   startsAt: string;
   endsAt: string;
+  /**
+   * NFT serial numbers eligible to vote (snapshot at creation time).
+   * Stored alongside the poll so the proof endpoint can serve consistent
+   * Merkle paths even after NFTs are transferred.
+   * Optional for backwards compatibility with pre-Phase-3 messages.
+   */
+  serials?: string[];
 }

@@ -30,6 +30,7 @@ const subscriber = new HCSSubscriber(
         choices:     poll.choices,
         tokenId:     poll.tokenId,
         merkleRoot:  poll.merkleRoot,
+        serials:     poll.serials,
         startsAt:    poll.startsAt,
         endsAt:      poll.endsAt,
       });
