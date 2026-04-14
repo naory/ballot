@@ -81,15 +81,30 @@ pnpm --filter @ballot/app dev        # http://localhost:3000
 pnpm --filter @ballot/indexer dev    # GraphQL at http://localhost:4000/graphql
 ```
 
-### ZK Circuits (optional — placeholder circuits)
+### ZK Circuits
+
+Required for `pnpm test` (circuit tests) and for the full voting flow (proof generation/verification).
 
 ```bash
-# Compile circuits (requires circom)
-pnpm --filter @ballot/circuits compile
+# Install circom (requires Rust)
+git clone https://github.com/iden3/circom.git
+cd circom && cargo build --release && cargo install --path circom && cd ..
 
-# Trusted setup
-pnpm --filter @ballot/circuits setup
+# Compile circuits and run trusted setup
+cd circuits
+npm install
+npm run compile   # → build/*.r1cs + build/vote_js/vote.wasm
+npm run setup     # → build/vote_final.zkey + build/vote.vkey.json
+
+# Copy artifacts for the frontend
+mkdir -p ../app/public/circuits/vote_js
+cp build/vote_js/vote.wasm ../app/public/circuits/vote_js/
+cp build/vote_final.zkey   ../app/public/circuits/
+cp build/vote.vkey.json    ../app/public/circuits/
+# The indexer reads vote.vkey.json from circuits/build/ by default
 ```
+
+> **Note:** `pnpm test` will fail on the `@ballot/circuits` suite if `circuits/build/` does not exist. The other test suites (`@ballot/core`, `@ballot/indexer`) do not require compiled artifacts.
 
 ### Environment Variables
 

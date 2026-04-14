@@ -7,12 +7,14 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run"
   },
   "dependencies": {
     "poseidon-lite": "^0.2.1"
   },
   "devDependencies": {
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.4"
   }
 }
