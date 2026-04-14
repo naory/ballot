@@ -52,6 +52,7 @@ function formatPoll(row: Record<string, unknown>) {
     startsAt:    row.starts_at,
     endsAt:      row.ends_at,
     creator:     row.creator ?? null,
+    idosConfig:  row.idos_config ? JSON.parse(row.idos_config as string) : null,
   };
 }
 
@@ -105,7 +106,8 @@ async function handleRest(
 
   // GET /api/polls/:topicId
   // GET /api/polls/:topicId/merkle-proof?serial=N
-  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/merkle-proof)?$/);
+  // GET /api/polls/:topicId/credential-proof?credentialId=X
+  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/merkle-proof|\/credential-proof)?$/);
   if (req.method === "GET" && pollSegment) {
     const topicId = decodeURIComponent(pollSegment[1]);
     const wantProof = Boolean(pollSegment[2]);
@@ -118,6 +120,57 @@ async function handleRest(
 
     if (!wantProof) {
       json(200, pollWithTally(row));
+      return;
+    }
+
+    // --- Credential proof endpoint ---
+    if (pollSegment[2] === "/credential-proof") {
+      const credentialId = url.searchParams.get("credentialId");
+      if (!credentialId) {
+        json(400, { error: "credentialId query param required" });
+        return;
+      }
+
+      if (!row.idos_config) {
+        json(400, { error: "Poll does not require idOS credentials" });
+        return;
+      }
+
+      const idosConfig = JSON.parse(row.idos_config as string) as { credentialMerkleRoot: string };
+
+      const storedCredIds = row.credential_ids
+        ? (JSON.parse(row.credential_ids as string) as string[])
+        : null;
+
+      if (!storedCredIds) {
+        json(500, { error: "Poll has no credential snapshot" });
+        return;
+      }
+
+      try {
+        const idx = storedCredIds.indexOf(credentialId);
+        if (idx === -1) {
+          json(403, { error: `Credential ${credentialId} is not in the eligible set` });
+          return;
+        }
+
+        const leafHashes = storedCredIds.map((id) => hashLeaf(id));
+        const layers = buildFixedTree(leafHashes);
+        const rawProof = getProof(layers, idx);
+
+        const pathElements = rawProof.map((p) => p.sibling);
+        const pathIndices = rawProof.map((p) => (p.direction === "left" ? 1 : 0));
+
+        json(200, {
+          credentialId,
+          credentialMerkleRoot: idosConfig.credentialMerkleRoot,
+          pathElements,
+          pathIndices,
+        });
+      } catch (err) {
+        console.error("[api] credential-proof error:", err);
+        json(500, { error: String(err) });
+      }
       return;
     }
 

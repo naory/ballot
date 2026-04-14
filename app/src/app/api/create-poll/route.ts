@@ -20,7 +20,7 @@ import {
 } from "@hashgraph/sdk";
 import { buildFixedTree, hashLeaf, getRoot } from "@ballot/core";
 import { getOperatorClient } from "@/lib/hedera";
-import type { HCSPollMessage } from "@ballot/core";
+import type { HCSPollMessage, IdosConfig } from "@ballot/core";
 
 const MIRROR_BASE =
   process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
@@ -32,6 +32,10 @@ interface CreatePollBody {
   choices: string[];
   startsAt: string;
   endsAt: string;
+  /** Optional idOS credential requirement. When present, credentialIds must also be provided. */
+  idosConfig?: IdosConfig;
+  /** Credential IDs snapshot (required when idosConfig is set) */
+  credentialIds?: string[];
 }
 
 async function fetchNftSerials(tokenId: string): Promise<string[]> {
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { title, description, tokenId, choices, startsAt, endsAt } = body;
+  const { title, description, tokenId, choices, startsAt, endsAt, idosConfig, credentialIds } = body;
 
   if (!title?.trim())
     return NextResponse.json({ error: "title is required" }, { status: 400 });
@@ -140,15 +144,17 @@ export async function POST(req: NextRequest) {
 
   // 5. Publish poll metadata (including snapshot serials) to the new topic
   const message: HCSPollMessage = {
-    type:        "poll_created",
-    title:       title.trim(),
-    description: description?.trim() || undefined,
-    choices:     choices.map((c) => c.trim()).filter(Boolean),
+    type:          "poll_created",
+    title:         title.trim(),
+    description:   description?.trim() || undefined,
+    choices:       choices.map((c) => c.trim()).filter(Boolean),
     tokenId,
     merkleRoot,
     startsAt,
     endsAt,
     serials,
+    idosConfig:    idosConfig ?? undefined,
+    credentialIds: credentialIds ?? undefined,
   };
 
   try {

@@ -7,7 +7,7 @@
 #   fly deploy --config indexer/fly.toml
 #
 # The SQLite DB is stored on a persistent volume mounted at /data.
-# Circuit artifacts (vote.vkey.json) must be bundled into the image — see Dockerfile.
+# Circuit artifacts (*.vkey.json) must be bundled into the image — see Dockerfile.
 
 app            = "ballot-indexer"
 primary_region = "iad"
@@ -21,7 +21,8 @@ primary_region = "iad"
   PORT      = "4000"
   NODE_ENV  = "production"
   DB_PATH   = "/data/ballot.sqlite"
-  VKEY_PATH = "/app/vote.vkey.json"  # bundled into the image by the Dockerfile
+  VKEY_PATH             = "/app/vote.vkey.json"                 # bundled into the image by the Dockerfile
+  CREDENTIAL_VKEY_PATH  = "/app/vote_with_credential.vkey.json" # bundled into the image by the Dockerfile
 
 [http_service]
   internal_port        = 4000

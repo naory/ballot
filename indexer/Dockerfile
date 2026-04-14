@@ -32,15 +32,17 @@ RUN pnpm install --frozen-lockfile --prod --filter @ballot/indexer... --filter @
 COPY --from=build /app/packages/core/dist ./packages/core/dist
 COPY --from=build /app/indexer/dist       ./indexer/dist
 
-# Bundle the ZK verification key — required for proof verification at runtime.
+# Bundle the ZK verification keys — required for proof verification at runtime.
 # Build circuits locally first: cd circuits && npm run compile && npm run setup
-# Then copy the vkey here before building the Docker image.
-COPY circuits/build/vote.vkey.json ./vote.vkey.json
+# Then copy the outputs into circuits/build/ before building the Docker image.
+COPY circuits/build/vote.vkey.json                  ./vote.vkey.json
+COPY circuits/build/vote_with_credential.vkey.json  ./vote_with_credential.vkey.json
 
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV DB_PATH=/data/ballot.sqlite
 ENV VKEY_PATH=/app/vote.vkey.json
+ENV CREDENTIAL_VKEY_PATH=/app/vote_with_credential.vkey.json
 
 EXPOSE 4000
 

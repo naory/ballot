@@ -31,6 +31,12 @@ circom "$CIRCUITS_DIR/src/vote.circom" \
   -l "$LIB_DIR" \
   -o "$BUILD_DIR"
 
+echo "==> Compiling vote_with_credential.circom"
+circom "$CIRCUITS_DIR/src/vote_with_credential.circom" \
+  --r1cs --wasm --sym \
+  -l "$LIB_DIR" \
+  -o "$BUILD_DIR"
+
 echo "Done. Artifacts in $BUILD_DIR"
 echo ""
 echo "Next: run 'npm run setup' to generate proving keys."

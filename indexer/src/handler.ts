@@ -6,7 +6,8 @@
 
 import { insertPoll, insertVote, getPoll } from "./db.js";
 import { verifyVoteProof as defaultVerify } from "./verifier.js";
-import type { HCSVoteMessage, HCSPollMessage, ZKProof } from "@ballot/core";
+import { verifyCredentialVoteProof as defaultCredentialVerify } from "./verifier_credential.js";
+import type { HCSVoteMessage, HCSPollMessage, ZKProof, IdosConfig } from "@ballot/core";
 
 /**
  * Parse an HCS consensus timestamp ("seconds.nanoseconds") into a Date.
@@ -35,7 +36,8 @@ export async function handleMessage(
   message: unknown,
   timestamp: string,
   onNewPoll: (topicId: string) => void,
-  verify: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultVerify
+  verify: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultVerify,
+  verifyCredential: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultCredentialVerify
 ): Promise<void> {
   const msg = message as { type: string };
 
@@ -45,14 +47,16 @@ export async function handleMessage(
     console.log(`[indexer] New poll: "${poll.title}" on topic ${topicId}`);
     insertPoll({
       topicId,
-      title:       poll.title,
-      description: poll.description,
-      choices:     poll.choices,
-      tokenId:     poll.tokenId,
-      merkleRoot:  poll.merkleRoot,
-      serials:     poll.serials,
-      startsAt:    poll.startsAt,
-      endsAt:      poll.endsAt,
+      title:         poll.title,
+      description:   poll.description,
+      choices:       poll.choices,
+      tokenId:       poll.tokenId,
+      merkleRoot:    poll.merkleRoot,
+      serials:       poll.serials,
+      startsAt:      poll.startsAt,
+      endsAt:        poll.endsAt,
+      idosConfig:    poll.idosConfig,
+      credentialIds: poll.credentialIds,
     });
     onNewPoll(topicId);
     return;
@@ -108,19 +112,38 @@ export async function handleMessage(
       `nullifier=${vote.nullifier}`
     );
 
-    const valid = await verify(vote.proof, vote.publicSignals);
-    if (!valid) {
-      console.warn(`[indexer] Rejected: invalid ZK proof for nullifier ${vote.nullifier}`);
-      return;
+    // Determine whether this poll requires idOS credential proof
+    const idosConfig: IdosConfig | null = poll.idos_config
+      ? JSON.parse(poll.idos_config as string)
+      : null;
+
+    if (idosConfig) {
+      // Credential-gated poll: must use the vote_with_credential circuit
+      if (!vote.credentialNullifier) {
+        console.warn(`[indexer] Rejected: credential-gated poll requires credentialNullifier`);
+        return;
+      }
+      const credValid = await verifyCredential(vote.proof, vote.publicSignals);
+      if (!credValid) {
+        console.warn(`[indexer] Rejected: invalid credential ZK proof for nullifier ${vote.nullifier}`);
+        return;
+      }
+    } else {
+      const valid = await verify(vote.proof, vote.publicSignals);
+      if (!valid) {
+        console.warn(`[indexer] Rejected: invalid ZK proof for nullifier ${vote.nullifier}`);
+        return;
+      }
     }
 
     const inserted = insertVote({
-      topicId:       vote.pollTopicId,
-      choiceIndex:   vote.choiceIndex,
-      nullifier:     vote.nullifier,
-      proof:         JSON.stringify(vote.proof),
-      publicSignals: vote.publicSignals,
-      consensusTs:   timestamp,
+      topicId:             vote.pollTopicId,
+      choiceIndex:         vote.choiceIndex,
+      nullifier:           vote.nullifier,
+      proof:               JSON.stringify(vote.proof),
+      publicSignals:       vote.publicSignals,
+      consensusTs:         timestamp,
+      credentialNullifier: vote.credentialNullifier,
     });
 
     if (!inserted) {

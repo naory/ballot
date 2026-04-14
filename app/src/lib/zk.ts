@@ -79,3 +79,65 @@ export async function verifyProof(
   const vkey = await vkeyRes.json();
   return snarkjs.groth16.verify(vkey, publicSignals, proof);
 }
+
+interface CredentialProofInput extends ProofInput {
+  credentialMerkleRoot: string;
+  credentialId: string;
+  credentialSecret: string;
+  credentialPathElements: string[];
+  credentialPathIndices: number[];
+}
+
+interface CredentialProofResult extends ProofResult {
+  /** Poseidon(credentialId, credentialSecret) — prevents double-voting with same credential */
+  credentialNullifier: string;
+}
+
+/**
+ * Generate a ZK vote proof that also proves idOS credential membership.
+ * Uses vote_with_credential.circom (5 public signals).
+ *
+ * Requires:
+ *   /circuits/vote_with_credential_js/vote_with_credential.wasm
+ *   /circuits/vote_with_credential_final.zkey
+ */
+export async function generateVoteWithCredentialProof(
+  input: CredentialProofInput
+): Promise<CredentialProofResult> {
+  const wasmPath = "/circuits/vote_with_credential_js/vote_with_credential.wasm";
+  const zkeyPath = "/circuits/vote_with_credential_final.zkey";
+
+  const nullifier = poseidon2([BigInt(input.serial), BigInt(input.secret)]).toString();
+  const credentialNullifier = poseidon2([
+    BigInt(input.credentialId),
+    BigInt(input.credentialSecret),
+  ]).toString();
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    {
+      merkleRoot:             input.merkleRoot,
+      nullifierHash:          nullifier,
+      choiceIndex:            input.choiceIndex,
+      credentialMerkleRoot:   input.credentialMerkleRoot,
+      credentialNullifier,
+      serial:                 input.serial,
+      secret:                 input.secret,
+      pathElements:           input.pathElements,
+      pathIndices:            input.pathIndices,
+      credentialId:           input.credentialId,
+      credentialSecret:       input.credentialSecret,
+      credentialPathElements: input.credentialPathElements,
+      credentialPathIndices:  input.credentialPathIndices,
+    },
+    wasmPath,
+    zkeyPath
+  );
+
+  // Public signal ordering: [merkleRoot, nullifierHash, choiceIndex, credentialMerkleRoot, credentialNullifier]
+  return {
+    proof: proof as ZKProof,
+    publicSignals: publicSignals as string[],
+    nullifier,
+    credentialNullifier,
+  };
+}

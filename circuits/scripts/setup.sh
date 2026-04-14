@@ -48,7 +48,7 @@ fi
 
 # ── Phase 2: Circuit-specific key generation ──────────────────────────────────
 
-for CIRCUIT in membership vote; do
+for CIRCUIT in membership vote vote_with_credential; do
   echo "==> Phase 2: Setup for $CIRCUIT"
 
   snarkjs groth16 setup \
