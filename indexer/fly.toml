@@ -1,0 +1,46 @@
+# Fly.io deployment config for @ballot/indexer
+#
+# Deploy:
+#   cd indexer
+#   fly launch --no-deploy   # first time — creates the app
+#   fly volumes create ballot_data --size 1 --region iad
+#   fly secrets set HEDERA_OPERATOR_ID=0.0.XXXXX HEDERA_OPERATOR_KEY=302e...
+#   fly deploy
+#
+# The SQLite DB is stored on a persistent volume mounted at /data.
+# Circuit artifacts (vote.vkey.json) must be bundled into the image — see Dockerfile.
+
+app            = "ballot-indexer"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT      = "4000"
+  NODE_ENV  = "production"
+  DB_PATH   = "/data/ballot.sqlite"
+  # VKEY_PATH defaults to ../circuits/build/vote.vkey.json relative to cwd.
+  # Override if the artifact is bundled elsewhere in the image:
+  # VKEY_PATH = "/app/vote.vkey.json"
+
+[http_service]
+  internal_port        = 4000
+  force_https          = true
+  auto_stop_machines   = true
+  auto_start_machines  = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  memory   = "512mb"
+  cpu_kind = "shared"
+  cpus     = 1
+
+[[mounts]]
+  source      = "ballot_data"
+  destination = "/data"
