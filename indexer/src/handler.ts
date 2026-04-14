@@ -123,6 +123,17 @@ export async function handleMessage(
         console.warn(`[indexer] Rejected: credential-gated poll requires credentialNullifier`);
         return;
       }
+      // publicSignals[4] = credentialNullifier in the vote_with_credential circuit.
+      // Verify the envelope value matches what the proof actually proves — prevents
+      // a nullifier substitution attack where a valid proof is submitted with a
+      // different credentialNullifier in the message body to bypass deduplication.
+      if (vote.credentialNullifier !== vote.publicSignals[4]) {
+        console.warn(
+          `[indexer] Rejected: credentialNullifier mismatch — ` +
+          `envelope=${vote.credentialNullifier}, publicSignals[4]=${vote.publicSignals[4]}`
+        );
+        return;
+      }
       const credValid = await verifyCredential(vote.proof, vote.publicSignals);
       if (!credValid) {
         console.warn(`[indexer] Rejected: invalid credential ZK proof for nullifier ${vote.nullifier}`);

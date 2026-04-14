@@ -85,6 +85,11 @@ export async function POST(req: NextRequest) {
       { error: "startsAt and endsAt are required" },
       { status: 400 }
     );
+  if (idosConfig && (!Array.isArray(credentialIds) || credentialIds.length === 0))
+    return NextResponse.json(
+      { error: "credentialIds (non-empty array) is required when idosConfig is set" },
+      { status: 400 }
+    );
 
   // 1. Snapshot NFT holders from Mirror Node
   let serials: string[];
