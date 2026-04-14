@@ -16,6 +16,9 @@ circuits/*.zkey
 circuits/*.vkey.json
 circuits/pot*.ptau
 
+# Circuit artifacts copied to app/public for client-side proving (generated, not committed)
+app/public/circuits/
+
 # SQLite
 *.sqlite
 *.sqlite3
