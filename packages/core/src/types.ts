@@ -18,6 +18,26 @@ export interface Poll {
   endsAt: string;
   /** Account ID of the poll creator */
   creator: string;
+  /**
+   * Optional idOS credential requirement.
+   * When present, voters must additionally prove they hold a valid credential
+   * from the specified issuer using vote_with_credential.circom.
+   */
+  idosConfig?: IdosConfig;
+}
+
+/**
+ * Configuration for idOS credential-gated polls.
+ * The poll creator snapshots all valid credential IDs from the issuer and
+ * builds a second Merkle tree — mirroring how NFT serials are handled.
+ */
+export interface IdosConfig {
+  /** idOS issuer DID or account address that issued the required credential */
+  issuerId: string;
+  /** W3C VC credential type string (e.g. "KYCCredential", "HumanCredential") */
+  credentialType: string;
+  /** Merkle root of valid credential IDs from the issuer at snapshot time */
+  credentialMerkleRoot: string;
 }
 
 /** A single vote submitted to HCS */
@@ -59,9 +79,17 @@ export interface HCSVoteMessage {
   type: "vote";
   pollTopicId: string;
   choiceIndex: number;
+  /** NFT nullifier = Poseidon(serial, secret) */
   nullifier: string;
   proof: ZKProof;
   publicSignals: string[];
+  /**
+   * Credential nullifier = Poseidon(credentialId, credentialSecret).
+   * Present only when the poll has idosConfig.
+   * Stored separately so the indexer can deduplicate without parsing publicSignals.
+   * Also equals publicSignals[4] in the vote_with_credential circuit.
+   */
+  credentialNullifier?: string;
 }
 
 /** HCS message envelope for poll creation */
@@ -81,4 +109,12 @@ export interface HCSPollMessage {
    * Optional for backwards compatibility with pre-Phase-3 messages.
    */
   serials?: string[];
+  /** Optional idOS credential requirement — see IdosConfig */
+  idosConfig?: IdosConfig;
+  /**
+   * Credential IDs from the idOS issuer at snapshot time.
+   * Stored so the credential Merkle proof endpoint can serve consistent
+   * paths even if credentials are added/revoked after poll creation.
+   */
+  credentialIds?: string[];
 }
