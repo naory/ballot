@@ -57,10 +57,21 @@ Development history and future directions.
 
 ## Potential future work
 
-- **Wallet connection** — HashPack / Blade wallet integration for serial discovery and signing
+These are independent tracks and can be prioritized separately.
+
+### Track A — Make it usable
+
+- **Wallet connection** — HashPack / Blade wallet integration so voters don't manually enter their NFT serial and secret; `credentialSecret` derivation in `idos.ts` already calls `walletSign` but nothing in the UI invokes it yet
 - **Frontend UX** — Poll creation UI, live tally charts, vote receipt display
-- **idOS SDK wiring** — Replace the stub in `idos.ts` with live `@idos-network/idos-sdk` calls
-- **Multi-party ceremony** — Additional `snarkjs zkey contribute` rounds for mainnet-grade trusted setup
-- **CDN for artifacts** — The `.zkey` files are large (~10 MB each); serve from a CDN rather than Next.js `public/`
-- **HCS topic ACLs** — Lock down poll-metadata topics so only the creator can submit `poll_created`
+
+### Track B — Complete idOS integration
+
+- **idOS SDK wiring** — Replace the stub in `app/src/lib/idos.ts` with live `@idos-network/idos-sdk` calls; currently the credential ID falls back to `NEXT_PUBLIC_DEV_CREDENTIAL_ID`, so credential-gated polls don't work end-to-end without this
+- Depends on Track A (wallet connection) — the SDK requires a connected wallet signer
+
+### Track C — Production readiness
+
+- **CDN for artifacts** — `.zkey` files are ~10 MB each; too large for Next.js `public/`, should be served from a CDN
+- **HCS topic ACLs** — Lock down poll topics so only the creator can submit `poll_created`; currently anyone who knows the topic ID can inject a fake poll message
+- **Multi-party ceremony** — Additional `snarkjs zkey contribute` rounds from independent participants before mainnet
 - **Mainnet deployment** — Production Fly.io config, Vercel frontend, mainnet Hedera credentials
