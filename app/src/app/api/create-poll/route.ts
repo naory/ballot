@@ -18,12 +18,34 @@ import {
   TopicMessageSubmitTransaction,
   TopicId,
 } from "@hashgraph/sdk";
-import { buildFixedTree, hashLeaf, getRoot } from "@ballot/core";
+import { buildFixedTree, hashLeaf, getRoot, RateLimiter, safeEqual } from "@ballot/core";
 import { getOperatorClient } from "@/lib/hedera";
 import type { HCSPollMessage, IdosConfig } from "@ballot/core";
 
 const MIRROR_BASE =
   process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
+
+// F5 — gate poll creation so anonymous callers can't spend the operator's HBAR.
+// When CREATE_POLL_API_KEY is set, callers must send `Authorization: Bearer <key>`.
+const CREATE_POLL_API_KEY = process.env.CREATE_POLL_API_KEY;
+// Per-client throttle (fixed window). State is per server instance.
+const createPollLimiter = new RateLimiter(5, 10 * 60 * 1000); // 5 per 10 minutes
+
+/**
+ * Best-effort client identifier from proxy headers.
+ *
+ * `x-forwarded-for` is client-controlled unless a trusted reverse proxy
+ * overwrites it, so this rate limiter is defense-in-depth only — the API key is
+ * the primary guard against spending the operator's HBAR. Deploy behind a proxy
+ * that sets a trustworthy forwarded-for for the throttle to be per-client.
+ */
+function clientKey(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
 
 interface CreatePollBody {
   title: string;
@@ -62,6 +84,28 @@ async function fetchNftSerials(tokenId: string): Promise<string[]> {
 }
 
 export async function POST(req: NextRequest) {
+  // F5 — throttle per client, then require the API key when configured. Both run
+  // before any Hedera/Mirror Node work so abuse is cheap to reject.
+  if (!createPollLimiter.check(clientKey(req))) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Try again later." },
+      { status: 429 }
+    );
+  }
+
+  if (CREATE_POLL_API_KEY) {
+    const auth = req.headers.get("authorization") ?? "";
+    const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (!safeEqual(provided, CREATE_POLL_API_KEY)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  } else if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[create-poll] CREATE_POLL_API_KEY is not set — the endpoint is UNAUTHENTICATED " +
+        "and anyone can spend the operator's HBAR (F5)."
+    );
+  }
+
   let body: CreatePollBody;
   try {
     body = await req.json();

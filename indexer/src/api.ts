@@ -9,6 +9,7 @@ import { createSchema, createYoga } from "graphql-yoga";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getAllPolls, getPoll } from "./db.js";
 import { computeTally } from "./tally.js";
+import { resolveAllowedOrigin } from "./cors.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,13 @@ async function handleRest(
   const url = new URL(req.url!, `http://${req.headers.host ?? "localhost"}`);
   const path = url.pathname;
 
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // Scope CORS to ALLOWED_ORIGINS when configured; otherwise keep the permissive
+  // default for these read-only public endpoints (F5).
+  const allowOrigin = resolveAllowedOrigin(req.headers.origin, process.env.ALLOWED_ORIGINS);
+  // Any value other than "*" means the response depends on the request Origin,
+  // so it must vary by Origin (including the denied case, to avoid cache poisoning).
+  if (allowOrigin !== "*") res.setHeader("Vary", "Origin");
+  if (allowOrigin) res.setHeader("Access-Control-Allow-Origin", allowOrigin);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Content-Type", "application/json");
 
@@ -261,7 +268,19 @@ const schema = createSchema({
 // ---------------------------------------------------------------------------
 
 export function startApi(port = 4000): void {
-  const yoga = createYoga({ schema });
+  const yoga = createYoga({
+    schema,
+    // Apply the same ALLOWED_ORIGINS scoping to /graphql (F5). Without this,
+    // graphql-yoga's default CORS reflects any Origin, leaving the GraphQL
+    // endpoint open even when the REST allowlist is configured.
+    cors: (request: Request) => {
+      const origin = resolveAllowedOrigin(
+        request.headers.get("origin") ?? undefined,
+        process.env.ALLOWED_ORIGINS
+      );
+      return { origin: origin ? [origin] : [] };
+    },
+  });
 
   const server = createServer((req, res) => {
     if (req.url?.startsWith("/api/")) {
