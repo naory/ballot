@@ -38,6 +38,10 @@ Anyone can independently verify the full tally:
 - Proofs are included in each HCS message.
 - The indexer's verification logic is open source — run your own instance and compare results.
 
+> **Design & trust model:** see [DESIGN.md](DESIGN.md) for the accepted decisions on
+> eligibility (committed ACL vs. NFT), trustless tally verification from HCS, mobile
+> wallet custody, and the known security flaws being addressed.
+
 ## Architecture
 
 ```
