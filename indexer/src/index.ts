@@ -8,8 +8,27 @@ import { HCSSubscriber } from "./subscriber.js";
 import { handleMessage } from "./handler.js";
 import { getAllPolls, getDb } from "./db.js";
 import { startApi } from "./api.js";
+import { loadVkey, voteVkeyPath, credentialVkeyPath } from "./vkey.js";
 
 const PORT = Number(process.env.PORT) || 4000;
+
+// Preflight the verification keys at startup (F8) so a missing/unreadable key is
+// surfaced immediately, instead of silently rejecting every vote at runtime.
+for (const [label, p] of [
+  ["vote", voteVkeyPath()],
+  ["vote_with_credential", credentialVkeyPath()],
+] as const) {
+  try {
+    loadVkey(p);
+    console.log(`[indexer] ${label} verification key OK (${p})`);
+  } catch (err) {
+    console.warn(
+      `[indexer] WARNING: ${label} verification key unavailable — ` +
+        `${err instanceof Error ? err.message : err} ` +
+        `Votes requiring it will be rejected until it is provided.`
+    );
+  }
+}
 
 // Only accept poll_created messages paid for by this account (F6). Defaults to
 // the operator that creates polls; leave unset to disable the check (dev only).

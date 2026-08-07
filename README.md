@@ -150,7 +150,9 @@ Copy `app/.env.example` to `app/.env.local`:
 | `NEXT_PUBLIC_MIRROR_NODE_URL` | Hedera Mirror Node REST URL |
 | `CREATE_POLL_API_KEY` | Server-side. When set, `POST /api/create-poll` requires `Authorization: Bearer <key>` (see [DESIGN.md](DESIGN.md) F5). If unset, the endpoint is unauthenticated. |
 
-The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, `BALLOT_CREATOR_ACCOUNT_ID` (accounts allowed to define polls; defaults to `HEDERA_OPERATOR_ID`, see [DESIGN.md](DESIGN.md) F6), and `ALLOWED_ORIGINS` (comma-separated CORS allowlist; unset ⇒ permissive `*`, see [DESIGN.md](DESIGN.md) F5).
+The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, `BALLOT_CREATOR_ACCOUNT_ID` (accounts allowed to define polls; defaults to `HEDERA_OPERATOR_ID`, see [DESIGN.md](DESIGN.md) F6), `ALLOWED_ORIGINS` (comma-separated CORS allowlist; unset ⇒ permissive `*`, see [DESIGN.md](DESIGN.md) F5), and `POLL_INTERVAL_MS` (Mirror Node poll cadence; default `5000`).
+
+At startup the indexer preflights the verification keys and logs whether each is available; a missing key is reported clearly and causes the affected votes to be rejected (rather than silently failing) until it is provided. HCS ingestion is at-least-once and eventually consistent — see the liveness note in `indexer/src/subscriber.ts`.
 
 ### Running locally
 
