@@ -7,6 +7,7 @@ import {
   getRoot,
   getProof,
   verifyProof,
+  buildCircuitMerkleProof,
   TREE_DEPTH,
 } from "./merkle.js";
 import { poseidon1, poseidon2 } from "poseidon-lite";
@@ -149,5 +150,51 @@ describe("proof length", () => {
     for (let i = 0; i < 3; i++) {
       expect(getProof(layers, i)).toHaveLength(TREE_DEPTH);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCircuitMerkleProof — one-shot circuit inputs (used client-side so the
+// voter never sends their serial to the indexer; see F4)
+// ---------------------------------------------------------------------------
+
+describe("buildCircuitMerkleProof", () => {
+  const serials = ["1", "2", "3", "4", "5", "6", "7", "8"];
+
+  /** Recompute the root from circuit inputs, honoring the pathIndices convention:
+   *  0 = current is left child, 1 = current is right child. */
+  function rootFromCircuitInputs(
+    target: string,
+    pathElements: string[],
+    pathIndices: number[]
+  ): string {
+    let cur = hashLeaf(target);
+    for (let i = 0; i < pathElements.length; i++) {
+      const sib = BigInt(pathElements[i]);
+      cur = pathIndices[i] === 0 ? hashPair(cur, sib) : hashPair(sib, cur);
+    }
+    return cur.toString();
+  }
+
+  it("returns the same root as buildFixedTree/getRoot", () => {
+    const expected = getRoot(buildFixedTree(serials.map(hashLeaf)));
+    expect(buildCircuitMerkleProof(serials, "5").merkleRoot).toBe(expected);
+  });
+
+  it("returns pathElements and pathIndices of length TREE_DEPTH", () => {
+    const { pathElements, pathIndices } = buildCircuitMerkleProof(serials, "3");
+    expect(pathElements).toHaveLength(TREE_DEPTH);
+    expect(pathIndices).toHaveLength(TREE_DEPTH);
+  });
+
+  it("produces circuit inputs that authenticate against the root, for every member", () => {
+    for (const s of serials) {
+      const { merkleRoot, pathElements, pathIndices } = buildCircuitMerkleProof(serials, s);
+      expect(rootFromCircuitInputs(s, pathElements, pathIndices)).toBe(merkleRoot);
+    }
+  });
+
+  it("throws when the target is not in the set", () => {
+    expect(() => buildCircuitMerkleProof(serials, "999")).toThrow(/not in the eligible set/);
   });
 });

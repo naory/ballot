@@ -1,7 +1,7 @@
 /**
  * Combined REST + GraphQL API server.
  *
- * REST  — /api/polls, /api/polls/:topicId, /api/polls/:topicId/merkle-proof
+ * REST  — /api/polls, /api/polls/:topicId, /api/polls/:topicId/credential-proof
  * GraphQL — /graphql (polls, tally queries)
  */
 
@@ -12,7 +12,7 @@ import { computeTally } from "./tally.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
 
 // ---------------------------------------------------------------------------
-// Mirror Node helper (server-side)
+// Mirror Node helper (server-side) — fallback for legacy polls with no snapshot
 // ---------------------------------------------------------------------------
 
 const MIRROR_BASE =
@@ -105,9 +105,13 @@ async function handleRest(
   }
 
   // GET /api/polls/:topicId
-  // GET /api/polls/:topicId/merkle-proof?serial=N
   // GET /api/polls/:topicId/credential-proof?credentialId=X
-  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/merkle-proof|\/credential-proof)?$/);
+  //
+  // Note: the NFT `merkle-proof` endpoint was removed (F4). Sending a serial to
+  // the indexer let it correlate the voter with their vote. The full eligible
+  // `serials[]` set is returned by GET /api/polls/:topicId, and the voter builds
+  // their proof client-side via `buildCircuitMerkleProof` in @ballot/core.
+  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/credential-proof)?$/);
   if (req.method === "GET" && pollSegment) {
     const topicId = decodeURIComponent(pollSegment[1]);
     const wantProof = Boolean(pollSegment[2]);
@@ -119,7 +123,21 @@ async function handleRest(
     }
 
     if (!wantProof) {
-      json(200, pollWithTally(row));
+      // Include the public eligible set so voters can build their Merkle proof
+      // client-side and never reveal which serial is theirs (F4). Legacy polls
+      // created before the snapshot column existed have no stored serials — fall
+      // back to a live Mirror Node fetch of the *full* holder set (still the full
+      // set, so no individual serial is leaked) so those polls remain votable.
+      let serials: string[];
+      try {
+        serials = row.serials
+          ? (JSON.parse(row.serials as string) as string[])
+          : await fetchNftSerials(row.token_id as string);
+      } catch (err) {
+        console.error("[api] failed to resolve eligible set:", err);
+        serials = [];
+      }
+      json(200, { ...pollWithTally(row), serials });
       return;
     }
 
@@ -174,47 +192,7 @@ async function handleRest(
       return;
     }
 
-    // --- Merkle proof endpoint ---
-    const serial = url.searchParams.get("serial");
-    if (!serial) {
-      json(400, { error: "serial query param required" });
-      return;
-    }
-
-    try {
-      // Prefer the snapshot stored at poll creation time; fall back to live
-      // Mirror Node state only for polls created before Phase 3.
-      const storedSerials = row.serials
-        ? (JSON.parse(row.serials as string) as string[])
-        : null;
-      const serials = storedSerials ?? await fetchNftSerials(row.token_id as string);
-
-      const idx = serials.indexOf(serial);
-      if (idx === -1) {
-        json(403, { error: `Serial ${serial} is not in the eligible set` });
-        return;
-      }
-
-      const leafHashes = serials.map((s) => hashLeaf(s));
-      const layers = buildFixedTree(leafHashes);
-      const rawProof = getProof(layers, idx);
-
-      // Convert to circuit inputs:
-      //   pathElements — sibling hashes as decimal strings
-      //   pathIndices  — 0 = current is left child, 1 = current is right child
-      const pathElements = rawProof.map((p) => p.sibling);
-      const pathIndices = rawProof.map((p) => (p.direction === "left" ? 1 : 0));
-
-      json(200, {
-        serial,
-        merkleRoot: row.merkle_root,
-        pathElements,
-        pathIndices,
-      });
-    } catch (err) {
-      console.error("[api] merkle-proof error:", err);
-      json(500, { error: String(err) });
-    }
+    json(404, { error: "Not found" });
     return;
   }
 

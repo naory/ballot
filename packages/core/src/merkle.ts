@@ -114,6 +114,38 @@ export function buildFixedTree(leafHashes: bigint[]): bigint[][] {
   return buildTree(padded);
 }
 
+/**
+ * Build circuit-ready Merkle inputs for a single member of an eligible set.
+ *
+ * Given the full list of leaf preimages (e.g. NFT serials or credential IDs)
+ * and the caller's own value, returns `{ merkleRoot, pathElements, pathIndices }`
+ * ready to feed to the ZK circuit — with `pathIndices` in the circuit convention
+ * (0 = current is left child, 1 = current is right child).
+ *
+ * This runs client-side so a voter can generate their proof from the public
+ * eligible set without ever revealing which member they are (see F4). It uses the
+ * same `buildFixedTree`/`getProof` primitives as the poll's committed root, so the
+ * root it derives matches the on-chain `merkleRoot`.
+ *
+ * Throws if `target` is not in `values`.
+ */
+export function buildCircuitMerkleProof(
+  values: string[],
+  target: string
+): { merkleRoot: string; pathElements: string[]; pathIndices: number[] } {
+  const idx = values.indexOf(target);
+  if (idx === -1) {
+    throw new Error(`${target} is not in the eligible set`);
+  }
+  const layers = buildFixedTree(values.map(hashLeaf));
+  const rawProof = getProof(layers, idx);
+  return {
+    merkleRoot: getRoot(layers),
+    pathElements: rawProof.map((p) => p.sibling),
+    pathIndices: rawProof.map((p) => (p.direction === "left" ? 1 : 0)),
+  };
+}
+
 /** Verify a Merkle proof against a root (off-circuit check, e.g. in tests) */
 export function verifyProof(
   leaf: bigint,
