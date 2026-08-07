@@ -9,6 +9,7 @@ import { createSchema, createYoga } from "graphql-yoga";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getAllPolls, getPoll } from "./db.js";
 import { computeTally } from "./tally.js";
+import { resolveAllowedOrigin } from "./cors.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,13 @@ async function handleRest(
   const url = new URL(req.url!, `http://${req.headers.host ?? "localhost"}`);
   const path = url.pathname;
 
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // Scope CORS to ALLOWED_ORIGINS when configured; otherwise keep the permissive
+  // default for these read-only public endpoints (F5).
+  const allowOrigin = resolveAllowedOrigin(req.headers.origin, process.env.ALLOWED_ORIGINS);
+  if (allowOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+    if (allowOrigin !== "*") res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.setHeader("Content-Type", "application/json");
 

@@ -65,9 +65,12 @@ NEXT_PUBLIC_HEDERA_OPERATOR_ID=0.0.XXXXX
 HEDERA_OPERATOR_KEY=302e...           # server-side only
 NEXT_PUBLIC_INDEXER_URL=http://localhost:4000/graphql
 NEXT_PUBLIC_MIRROR_NODE_URL=https://testnet.mirrornode.hedera.com
+CREATE_POLL_API_KEY=...                # server-side; gates POST /api/create-poll (F5)
 ```
 
-The indexer has no `.env` — configure via shell: `PORT`, `DB_PATH` (default `ballot.sqlite` in cwd), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, and `BALLOT_CREATOR_ACCOUNT_ID`. The last one is the account allowed to publish `poll_created`; **set it on the indexer process** to enforce poll authenticity (F6) — it is a separate process from the app and does not inherit `HEDERA_OPERATOR_ID`. If unset, the indexer logs a warning and does not enforce the payer check (the HCS submit key still protects new topics at the ledger).
+`CREATE_POLL_API_KEY` (app, server-side): when set, `POST /api/create-poll` requires `Authorization: Bearer <key>` so anonymous callers can't spend the operator's HBAR (F5). The route is also per-client rate-limited.
+
+The indexer has no `.env` — configure via shell: `PORT`, `DB_PATH` (default `ballot.sqlite` in cwd), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, `BALLOT_CREATOR_ACCOUNT_ID`, and `ALLOWED_ORIGINS`. `BALLOT_CREATOR_ACCOUNT_ID` is the account allowed to publish `poll_created`; **set it on the indexer process** to enforce poll authenticity (F6) — it is a separate process from the app and does not inherit `HEDERA_OPERATOR_ID`. If unset, the indexer logs a warning and does not enforce the payer check (the HCS submit key still protects new topics at the ledger). `ALLOWED_ORIGINS` is a comma-separated CORS allowlist (F5); unset ⇒ permissive `*`.
 
 ## Architecture
 
