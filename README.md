@@ -67,7 +67,7 @@ Anyone can independently verify the full tally:
 
 1. **Poll creation** — Creator picks an HTS token and choices. The server action snapshots NFT holders via Mirror Node, builds a Poseidon Merkle tree, creates an HCS topic, and publishes `poll_created` (with `merkleRoot` and `serials[]`). For idOS polls, a second credential Merkle tree is also committed.
 
-2. **Voting** — The voter enters their NFT serial and a secret. The app fetches their Merkle proof from the indexer, generates a Groth16 proof client-side, and submits a `vote` HCS message. For idOS polls, the app additionally fetches the credential proof and uses the `vote_with_credential` circuit.
+2. **Voting** — The voter enters their NFT serial and a secret. The app builds the Merkle proof **in-browser** from the poll's public eligible set (so the serial never leaves the device — see [DESIGN.md](DESIGN.md) F4), generates a Groth16 proof client-side, and submits a `vote` HCS message. For idOS polls, the app additionally uses the `vote_with_credential` circuit.
 
 3. **Indexing** — The indexer subscribes to poll topics. On each `vote` message it verifies the ZK proof, checks both nullifiers for uniqueness, and records the vote. Results are served via GraphQL and REST.
 

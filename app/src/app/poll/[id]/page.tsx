@@ -34,6 +34,7 @@ export default async function PollPage({ params }: Props) {
             topicId={topicId}
             choices={poll.choices}
             merkleRoot={poll.merkleRoot}
+            serials={poll.serials ?? []}
           />
         </div>
         <div>

@@ -12,32 +12,6 @@ import { computeTally } from "./tally.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
 
 // ---------------------------------------------------------------------------
-// Mirror Node helper (server-side)
-// ---------------------------------------------------------------------------
-
-const MIRROR_BASE =
-  process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
-
-async function fetchNftSerials(tokenId: string): Promise<string[]> {
-  const serials: string[] = [];
-  let url: string | null =
-    `${MIRROR_BASE}/api/v1/tokens/${tokenId}/nfts?limit=100&order=asc`;
-
-  while (url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Mirror Node ${res.status} fetching ${url}`);
-    const data = (await res.json()) as {
-      nfts: { serial_number: number }[];
-      links?: { next?: string };
-    };
-    for (const nft of data.nfts) serials.push(String(nft.serial_number));
-    url = data.links?.next ? `${MIRROR_BASE}${data.links.next}` : null;
-  }
-
-  return serials;
-}
-
-// ---------------------------------------------------------------------------
 // Row → API shape
 // ---------------------------------------------------------------------------
 
@@ -105,9 +79,13 @@ async function handleRest(
   }
 
   // GET /api/polls/:topicId
-  // GET /api/polls/:topicId/merkle-proof?serial=N
   // GET /api/polls/:topicId/credential-proof?credentialId=X
-  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/merkle-proof|\/credential-proof)?$/);
+  //
+  // Note: the NFT `merkle-proof` endpoint was removed (F4). Sending a serial to
+  // the indexer let it correlate the voter with their vote. The full eligible
+  // `serials[]` set is returned by GET /api/polls/:topicId, and the voter builds
+  // their proof client-side via `buildCircuitMerkleProof` in @ballot/core.
+  const pollSegment = path.match(/^\/api\/polls\/([^/]+)(\/credential-proof)?$/);
   if (req.method === "GET" && pollSegment) {
     const topicId = decodeURIComponent(pollSegment[1]);
     const wantProof = Boolean(pollSegment[2]);
@@ -119,7 +97,10 @@ async function handleRest(
     }
 
     if (!wantProof) {
-      json(200, pollWithTally(row));
+      // Include the public eligible set so voters can build their Merkle proof
+      // client-side and never reveal which serial is theirs (F4).
+      const serials = row.serials ? (JSON.parse(row.serials as string) as string[]) : [];
+      json(200, { ...pollWithTally(row), serials });
       return;
     }
 
@@ -174,47 +155,7 @@ async function handleRest(
       return;
     }
 
-    // --- Merkle proof endpoint ---
-    const serial = url.searchParams.get("serial");
-    if (!serial) {
-      json(400, { error: "serial query param required" });
-      return;
-    }
-
-    try {
-      // Prefer the snapshot stored at poll creation time; fall back to live
-      // Mirror Node state only for polls created before Phase 3.
-      const storedSerials = row.serials
-        ? (JSON.parse(row.serials as string) as string[])
-        : null;
-      const serials = storedSerials ?? await fetchNftSerials(row.token_id as string);
-
-      const idx = serials.indexOf(serial);
-      if (idx === -1) {
-        json(403, { error: `Serial ${serial} is not in the eligible set` });
-        return;
-      }
-
-      const leafHashes = serials.map((s) => hashLeaf(s));
-      const layers = buildFixedTree(leafHashes);
-      const rawProof = getProof(layers, idx);
-
-      // Convert to circuit inputs:
-      //   pathElements — sibling hashes as decimal strings
-      //   pathIndices  — 0 = current is left child, 1 = current is right child
-      const pathElements = rawProof.map((p) => p.sibling);
-      const pathIndices = rawProof.map((p) => (p.direction === "left" ? 1 : 0));
-
-      json(200, {
-        serial,
-        merkleRoot: row.merkle_root,
-        pathElements,
-        pathIndices,
-      });
-    } catch (err) {
-      console.error("[api] merkle-proof error:", err);
-      json(500, { error: String(err) });
-    }
+    json(404, { error: "Not found" });
     return;
   }
 

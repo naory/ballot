@@ -26,17 +26,16 @@ export interface PollWithTally {
   startsAt: string;
   endsAt: string;
   creator: string | null;
+  /**
+   * The public eligible set (NFT serials). Present on the single-poll endpoint
+   * so voters can build their Merkle proof client-side without revealing which
+   * serial is theirs (F4). Absent on the list endpoint.
+   */
+  serials?: string[];
   tally: {
     totalVotes: number;
     counts: PollTallyEntry[];
   };
-}
-
-export interface MerkleProofResult {
-  serial: string;
-  merkleRoot: string;
-  pathElements: string[];
-  pathIndices: number[];
 }
 
 /** Fetch all polls with their current tallies */
@@ -50,7 +49,7 @@ export async function fetchPolls(): Promise<PollWithTally[]> {
   }
 }
 
-/** Fetch a single poll with its tally */
+/** Fetch a single poll with its tally and public eligible set (`serials`). */
 export async function fetchPoll(topicId: string): Promise<PollWithTally | null> {
   try {
     const res = await fetch(`${INDEXER_URL}/api/polls/${encodeURIComponent(topicId)}`, {
@@ -61,21 +60,4 @@ export async function fetchPoll(topicId: string): Promise<PollWithTally | null> 
   } catch {
     return null;
   }
-}
-
-/**
- * Fetch the Merkle proof for a voter's NFT serial in a given poll.
- * Throws if the serial is not eligible or the indexer is unreachable.
- */
-export async function fetchMerkleProof(
-  topicId: string,
-  serial: string
-): Promise<MerkleProofResult> {
-  const url = `${INDEXER_URL}/api/polls/${encodeURIComponent(topicId)}/merkle-proof?serial=${encodeURIComponent(serial)}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((body as { error: string }).error ?? res.statusText);
-  }
-  return res.json();
 }
