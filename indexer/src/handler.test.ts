@@ -342,6 +342,15 @@ describe("handleMessage — credential path binding (F3)", () => {
     await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
     expect(total()).toBe(before + 1);
   });
+
+  it("rejects a credential vote with an invalid credential proof", async () => {
+    // Exercises the verifyCredential(false) path — the credential-path analogue
+    // of the base "invalid ZK proof" test.
+    const before = total();
+    const vote = makeCredentialVote("cp-null-4", "cp-cred-4");
+    await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysInvalid);
+    expect(total()).toBe(before);
+  });
 });
 
 // ── vote — publicSignals binding (F3) ────────────────────────────────────────
