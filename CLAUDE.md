@@ -67,7 +67,7 @@ NEXT_PUBLIC_INDEXER_URL=http://localhost:4000/graphql
 NEXT_PUBLIC_MIRROR_NODE_URL=https://testnet.mirrornode.hedera.com
 ```
 
-The indexer has no `.env` — configure via shell: `PORT`, `DB_PATH` (default `ballot.sqlite` in cwd), `VKEY_PATH`.
+The indexer has no `.env` — configure via shell: `PORT`, `DB_PATH` (default `ballot.sqlite` in cwd), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, and `BALLOT_CREATOR_ACCOUNT_ID`. The last one is the account allowed to publish `poll_created`; **set it on the indexer process** to enforce poll authenticity (F6) — it is a separate process from the app and does not inherit `HEDERA_OPERATOR_ID`. If unset, the indexer logs a warning and does not enforce the payer check (the HCS submit key still protects new topics at the ledger).
 
 ## Architecture
 

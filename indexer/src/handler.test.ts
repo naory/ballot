@@ -16,7 +16,7 @@ import type { ZKProof } from "@ballot/core";
 process.env.DB_PATH = ":memory:";
 
 const { handleMessage, parseConsensusTimestamp } = await import("./handler.js");
-const { insertPoll, getTally } = await import("./db.js");
+const { insertPoll, getTally, getPoll } = await import("./db.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -120,6 +120,67 @@ describe("handleMessage — poll_created", () => {
     );
 
     expect(newTopics).toEqual(["0.0.7001"]);
+  });
+});
+
+// ── poll_created — creator authorization (F6) ────────────────────────────────
+// A forged poll_created (injected by anyone who knows the topic ID) must not be
+// accepted as the poll definition. When a trusted creator account is configured,
+// only poll_created messages paid for by that account are accepted.
+
+describe("handleMessage — poll_created authorization (F6)", () => {
+  const CREATOR = "0.0.5000";
+
+  const forgedPoll = {
+    type: "poll_created" as const,
+    title: "Forged Poll",
+    choices: ["A", "B"],
+    tokenId: "0.0.901",
+    merkleRoot: "111",
+    startsAt: STARTS_AT,
+    endsAt: ENDS_AT,
+  };
+
+  it("rejects poll_created from an unauthorized payer", async () => {
+    const newTopics: string[] = [];
+    await handleMessage(
+      "0.0.7200",
+      forgedPoll,
+      TS_DURING,
+      (t) => newTopics.push(t),
+      alwaysValid,
+      undefined,
+      { payerAccountId: "0.0.9999", trustedCreator: CREATOR }
+    );
+    expect(newTopics).toEqual([]);
+    expect(getPoll("0.0.7200")).toBeUndefined();
+  });
+
+  it("accepts poll_created from the authorized creator", async () => {
+    const newTopics: string[] = [];
+    await handleMessage(
+      "0.0.7201",
+      { ...forgedPoll, title: "Legit Poll" },
+      TS_DURING,
+      (t) => newTopics.push(t),
+      alwaysValid,
+      undefined,
+      { payerAccountId: CREATOR, trustedCreator: CREATOR }
+    );
+    expect(newTopics).toEqual(["0.0.7201"]);
+    expect(getPoll("0.0.7201")).toBeDefined();
+  });
+
+  it("accepts poll_created when no trusted creator is configured (back-compat)", async () => {
+    const newTopics: string[] = [];
+    await handleMessage(
+      "0.0.7202",
+      { ...forgedPoll, title: "Unconfigured Poll" },
+      TS_DURING,
+      (t) => newTopics.push(t),
+      alwaysValid
+    );
+    expect(newTopics).toEqual(["0.0.7202"]);
   });
 });
 

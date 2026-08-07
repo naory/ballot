@@ -37,13 +37,29 @@ export async function handleMessage(
   timestamp: string,
   onNewPoll: (topicId: string) => void,
   verify: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultVerify,
-  verifyCredential: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultCredentialVerify
+  verifyCredential: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultCredentialVerify,
+  opts: { payerAccountId?: string; trustedCreator?: string } = {}
 ): Promise<void> {
   const msg = message as { type: string };
 
   // ── poll_created ────────────────────────────────────────────────────────────
   if (msg.type === "poll_created") {
     const poll = message as HCSPollMessage;
+
+    // Authorize the poll definition (F6). HCS topics have no per-message-type
+    // access control, so anyone who knows the topic ID could inject a fake
+    // poll_created. When a trusted creator account is configured, only accept a
+    // poll_created that was paid for by that account (Mirror Node attests the
+    // payer). Without this, a forged root/choices/window could be served to
+    // voters as authoritative.
+    if (opts.trustedCreator && opts.payerAccountId !== opts.trustedCreator) {
+      console.warn(
+        `[indexer] Rejected: poll_created on ${topicId} from unauthorized payer ` +
+        `${opts.payerAccountId ?? "unknown"} (expected ${opts.trustedCreator})`
+      );
+      return;
+    }
+
     console.log(`[indexer] New poll: "${poll.title}" on topic ${topicId}`);
     insertPoll({
       topicId,

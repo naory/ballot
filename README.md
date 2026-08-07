@@ -149,7 +149,7 @@ Copy `app/.env.example` to `app/.env.local`:
 | `NEXT_PUBLIC_INDEXER_URL` | Indexer GraphQL endpoint |
 | `NEXT_PUBLIC_MIRROR_NODE_URL` | Hedera Mirror Node REST URL |
 
-The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`.
+The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, and `BALLOT_CREATOR_ACCOUNT_ID` (accounts allowed to define polls; defaults to `HEDERA_OPERATOR_ID`, see [DESIGN.md](DESIGN.md) F6).
 
 ### Running locally
 

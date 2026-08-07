@@ -11,16 +11,35 @@ import { startApi } from "./api.js";
 
 const PORT = Number(process.env.PORT) || 4000;
 
+// Only accept poll_created messages paid for by this account (F6). Defaults to
+// the operator that creates polls; leave unset to disable the check (dev only).
+const TRUSTED_CREATOR =
+  process.env.BALLOT_CREATOR_ACCOUNT_ID || process.env.HEDERA_OPERATOR_ID;
+if (!TRUSTED_CREATOR) {
+  console.warn(
+    "[indexer] WARNING: BALLOT_CREATOR_ACCOUNT_ID / HEDERA_OPERATOR_ID not set — " +
+    "poll_created authenticity is NOT enforced (F6). Any account can define polls."
+  );
+}
+
 // Ensure DB + schema exist
 getDb();
 
 // Message handler — processes incoming HCS messages for any tracked topic
 const subscriber = new HCSSubscriber(
-  (topicId: string, message: unknown, timestamp: string) =>
-    handleMessage(topicId, message, timestamp, (newTopicId) => {
-      // Subscribe to the new topic so votes arriving after poll_created are processed
-      subscriber.subscribe(newTopicId);
-    })
+  (topicId: string, message: unknown, timestamp: string, payerAccountId?: string) =>
+    handleMessage(
+      topicId,
+      message,
+      timestamp,
+      (newTopicId) => {
+        // Subscribe to the new topic so votes arriving after poll_created are processed
+        subscriber.subscribe(newTopicId);
+      },
+      undefined,
+      undefined,
+      { payerAccountId, trustedCreator: TRUSTED_CREATOR }
+    )
 );
 
 // Load all known polls from DB and subscribe to their HCS topics
