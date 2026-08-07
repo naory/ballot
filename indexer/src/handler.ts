@@ -167,6 +167,16 @@ export async function handleMessage(
         console.warn(`[indexer] Rejected: credential-gated poll requires credentialNullifier`);
         return;
       }
+      // publicSignals[3] = credentialMerkleRoot. Bind it to the poll's committed
+      // credential root so a proof against a *different* credential set (e.g. one
+      // the attacker controls) cannot be counted as eligible for this poll.
+      if (vote.publicSignals[3] !== idosConfig.credentialMerkleRoot) {
+        console.warn(
+          `[indexer] Rejected: credentialMerkleRoot mismatch — ` +
+          `publicSignals[3]=${vote.publicSignals[3]}, poll credential root=${idosConfig.credentialMerkleRoot}`
+        );
+        return;
+      }
       // publicSignals[4] = credentialNullifier in the vote_with_credential circuit.
       // Verify the envelope value matches what the proof actually proves — prevents
       // a nullifier substitution attack where a valid proof is submitted with a
