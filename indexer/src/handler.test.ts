@@ -205,3 +205,60 @@ describe("handleMessage — other vote rejections", () => {
     expect(getTally(POLL_TOPIC).reduce((s, r) => s + r.count, 0)).toBe(before);
   });
 });
+
+// ── vote — publicSignals binding (F3) ────────────────────────────────────────
+// The trusted envelope fields (nullifier, choiceIndex) and the target merkleRoot
+// must equal what the proof actually proves, otherwise a single valid proof can be
+// replayed with a fresh nullifier (multi-count) or a different choiceIndex (miscount).
+
+describe("handleMessage — publicSignals binding (F3)", () => {
+  const total = () => getTally(POLL_TOPIC).reduce((s, r) => s + r.count, 0);
+
+  it("rejects when envelope nullifier != publicSignals[1]", async () => {
+    const before = total();
+    const msg = {
+      type: "vote" as const,
+      pollTopicId: POLL_TOPIC,
+      choiceIndex: 0,
+      nullifier: "f3-envelope-null",              // envelope value
+      proof: fakeProof,
+      publicSignals: ["777", "f3-proven-null", "0"], // proof proves a different nullifier
+    };
+    await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
+  });
+
+  it("rejects when envelope choiceIndex != publicSignals[2]", async () => {
+    const before = total();
+    const msg = {
+      type: "vote" as const,
+      pollTopicId: POLL_TOPIC,
+      choiceIndex: 1,                              // envelope says choice 1
+      nullifier: "f3-choice",
+      proof: fakeProof,
+      publicSignals: ["777", "f3-choice", "0"],    // proof proves choice 0
+    };
+    await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
+  });
+
+  it("rejects when publicSignals[0] (root) != poll merkleRoot", async () => {
+    const before = total();
+    const msg = {
+      type: "vote" as const,
+      pollTopicId: POLL_TOPIC,
+      choiceIndex: 0,
+      nullifier: "f3-root",
+      proof: fakeProof,
+      publicSignals: ["999", "f3-root", "0"],      // proof is against a different root
+    };
+    await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
+  });
+
+  it("accepts when envelope matches publicSignals", async () => {
+    const before = total();
+    await handleMessage(POLL_TOPIC, makeVote("f3-ok", 0), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before + 1);
+  });
+});
