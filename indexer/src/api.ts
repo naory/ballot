@@ -1,7 +1,7 @@
 /**
  * Combined REST + GraphQL API server.
  *
- * REST  — /api/polls, /api/polls/:topicId, /api/polls/:topicId/merkle-proof
+ * REST  — /api/polls, /api/polls/:topicId, /api/polls/:topicId/credential-proof
  * GraphQL — /graphql (polls, tally queries)
  */
 
@@ -10,6 +10,32 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { getAllPolls, getPoll } from "./db.js";
 import { computeTally } from "./tally.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
+
+// ---------------------------------------------------------------------------
+// Mirror Node helper (server-side) — fallback for legacy polls with no snapshot
+// ---------------------------------------------------------------------------
+
+const MIRROR_BASE =
+  process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
+
+async function fetchNftSerials(tokenId: string): Promise<string[]> {
+  const serials: string[] = [];
+  let url: string | null =
+    `${MIRROR_BASE}/api/v1/tokens/${tokenId}/nfts?limit=100&order=asc`;
+
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Mirror Node ${res.status} fetching ${url}`);
+    const data = (await res.json()) as {
+      nfts: { serial_number: number }[];
+      links?: { next?: string };
+    };
+    for (const nft of data.nfts) serials.push(String(nft.serial_number));
+    url = data.links?.next ? `${MIRROR_BASE}${data.links.next}` : null;
+  }
+
+  return serials;
+}
 
 // ---------------------------------------------------------------------------
 // Row → API shape
@@ -98,8 +124,19 @@ async function handleRest(
 
     if (!wantProof) {
       // Include the public eligible set so voters can build their Merkle proof
-      // client-side and never reveal which serial is theirs (F4).
-      const serials = row.serials ? (JSON.parse(row.serials as string) as string[]) : [];
+      // client-side and never reveal which serial is theirs (F4). Legacy polls
+      // created before the snapshot column existed have no stored serials — fall
+      // back to a live Mirror Node fetch of the *full* holder set (still the full
+      // set, so no individual serial is leaked) so those polls remain votable.
+      let serials: string[];
+      try {
+        serials = row.serials
+          ? (JSON.parse(row.serials as string) as string[])
+          : await fetchNftSerials(row.token_id as string);
+      } catch (err) {
+        console.error("[api] failed to resolve eligible set:", err);
+        serials = [];
+      }
       json(200, { ...pollWithTally(row), serials });
       return;
     }

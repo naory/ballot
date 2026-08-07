@@ -123,8 +123,9 @@ export function buildFixedTree(leafHashes: bigint[]): bigint[][] {
  * (0 = current is left child, 1 = current is right child).
  *
  * This runs client-side so a voter can generate their proof from the public
- * eligible set without ever revealing which member they are (see F4). The same
- * logic backs the indexer's proof endpoints, so both sides stay in sync.
+ * eligible set without ever revealing which member they are (see F4). It uses the
+ * same `buildFixedTree`/`getProof` primitives as the poll's committed root, so the
+ * root it derives matches the on-chain `merkleRoot`.
  *
  * Throws if `target` is not in `values`.
  */
