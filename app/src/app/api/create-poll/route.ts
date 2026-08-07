@@ -31,7 +31,14 @@ const CREATE_POLL_API_KEY = process.env.CREATE_POLL_API_KEY;
 // Per-client throttle (fixed window). State is per server instance.
 const createPollLimiter = new RateLimiter(5, 10 * 60 * 1000); // 5 per 10 minutes
 
-/** Best-effort client identifier from proxy headers. */
+/**
+ * Best-effort client identifier from proxy headers.
+ *
+ * `x-forwarded-for` is client-controlled unless a trusted reverse proxy
+ * overwrites it, so this rate limiter is defense-in-depth only — the API key is
+ * the primary guard against spending the operator's HBAR. Deploy behind a proxy
+ * that sets a trustworthy forwarded-for for the throttle to be per-client.
+ */
 function clientKey(req: NextRequest): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||

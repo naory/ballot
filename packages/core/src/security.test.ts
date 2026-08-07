@@ -56,4 +56,13 @@ describe("RateLimiter", () => {
     expect(rl.check("b", 0)).toBe(true); // different key, own budget
     expect(rl.check("a", 0)).toBe(false);
   });
+
+  it("evicts expired buckets so the map does not grow unbounded", () => {
+    const rl = new RateLimiter(1, 1000);
+    for (let i = 0; i < 100; i++) rl.check(`k${i}`, 0); // 100 distinct keys at t=0
+    expect(rl.size).toBe(100);
+    // A check well past the window triggers a sweep of the expired entries.
+    rl.check("later", 5000);
+    expect(rl.size).toBe(1); // only "later" remains
+  });
 });
