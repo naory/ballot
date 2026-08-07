@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { generateVoteProof } from "@/lib/zk";
-import { fetchMerkleProof } from "@/lib/indexer";
 import { getReadOnlyClient, submitVote } from "@/lib/hedera";
+import { buildCircuitMerkleProof } from "@ballot/core";
 import type { ZKProof } from "@ballot/core";
 
 interface VoteFormProps {
   topicId: string;
   choices: string[];
   merkleRoot: string;
+  /** Public eligible set — used to build the Merkle proof in-browser (F4). */
+  serials: string[];
 }
 
 type Step =
@@ -36,7 +38,7 @@ function getOrCreateSecret(topicId: string, serial: string): string {
   return secret;
 }
 
-export function VoteForm({ topicId, choices, merkleRoot }: VoteFormProps) {
+export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [serial, setSerial] = useState("");
   const [step, setStep] = useState<Step>({ kind: "idle" });
@@ -54,10 +56,19 @@ export function VoteForm({ topicId, choices, merkleRoot }: VoteFormProps) {
 
     setStep({ kind: "proving" });
     try {
-      // 1. Fetch Merkle proof from indexer
-      const proofData = await fetchMerkleProof(topicId, serial.trim());
+      const trimmedSerial = serial.trim();
 
-      // Sanity-check: merkleRoot from indexer must match what the poll page fetched
+      // 1. Build the Merkle proof in-browser from the public eligible set.
+      //    The serial never leaves the device, so the indexer cannot correlate
+      //    the voter with their vote (F4).
+      let proofData: { merkleRoot: string; pathElements: string[]; pathIndices: number[] };
+      try {
+        proofData = buildCircuitMerkleProof(serials, trimmedSerial);
+      } catch {
+        throw new Error(`Serial ${trimmedSerial} is not in the eligible set for this poll.`);
+      }
+
+      // Sanity-check: the locally computed root must match the poll's committed root.
       if (proofData.merkleRoot !== merkleRoot) {
         throw new Error(
           "Merkle root mismatch — the eligible set may have changed. Refresh the page."
@@ -65,12 +76,12 @@ export function VoteForm({ topicId, choices, merkleRoot }: VoteFormProps) {
       }
 
       // 2. Retrieve or generate a stable secret for this (topicId, serial) pair
-      const secret = getOrCreateSecret(topicId, serial.trim());
+      const secret = getOrCreateSecret(topicId, trimmedSerial);
 
       // 3. Generate ZK proof client-side (requires compiled circuit artifacts)
       const { proof, publicSignals, nullifier } = await generateVoteProof({
         merkleRoot:   proofData.merkleRoot,
-        serial:       serial.trim(),
+        serial:       trimmedSerial,
         secret,
         pathElements: proofData.pathElements,
         pathIndices:  proofData.pathIndices,
