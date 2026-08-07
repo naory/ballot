@@ -267,6 +267,92 @@ describe("handleMessage — other vote rejections", () => {
   });
 });
 
+// ── vote — credential path binding (F3 for vote_with_credential) ──────────────
+// The vote_with_credential circuit has 5 public signals:
+//   [0] merkleRoot, [1] nullifierHash, [2] choiceIndex,
+//   [3] credentialMerkleRoot, [4] credentialNullifier
+// The envelope must be bound to publicSignals for the credential fields too,
+// otherwise a valid proof against a *different* credential set ([3]) could be
+// counted, or the dedup credentialNullifier ([4]) could be swapped.
+
+describe("handleMessage — credential path binding (F3)", () => {
+  const CRED_TOPIC = "0.0.6002";
+  const CRED_ROOT = "888"; // idosConfig.credentialMerkleRoot
+
+  const total = () => getTally(CRED_TOPIC).reduce((s, r) => s + r.count, 0);
+
+  beforeAll(() => {
+    insertPoll({
+      topicId: CRED_TOPIC,
+      title: "Credential Poll",
+      choices: ["Yes", "No"],
+      tokenId: "0.0.802",
+      merkleRoot: "777",
+      startsAt: STARTS_AT,
+      endsAt: ENDS_AT,
+      idosConfig: {
+        issuerId: "issuer-1",
+        credentialType: "KYCCredential",
+        credentialMerkleRoot: CRED_ROOT,
+      },
+      credentialIds: ["c1", "c2"],
+    });
+  });
+
+  /** A well-formed credential vote; override fields to construct mismatches. */
+  function makeCredentialVote(
+    nullifier: string,
+    credentialNullifier: string,
+    overrides: { credRoot?: string; sig4?: string } = {}
+  ) {
+    return {
+      type: "vote" as const,
+      pollTopicId: CRED_TOPIC,
+      choiceIndex: 0,
+      nullifier,
+      credentialNullifier,
+      proof: fakeProof,
+      publicSignals: [
+        "777",                              // [0] merkleRoot
+        nullifier,                          // [1] nullifierHash
+        "0",                                // [2] choiceIndex
+        overrides.credRoot ?? CRED_ROOT,    // [3] credentialMerkleRoot
+        overrides.sig4 ?? credentialNullifier, // [4] credentialNullifier
+      ],
+    };
+  }
+
+  it("rejects when publicSignals[3] != idosConfig.credentialMerkleRoot", async () => {
+    const before = total();
+    const vote = makeCredentialVote("cp-null-1", "cp-cred-1", { credRoot: "999" });
+    await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
+    expect(total()).toBe(before);
+  });
+
+  it("rejects when envelope credentialNullifier != publicSignals[4]", async () => {
+    const before = total();
+    const vote = makeCredentialVote("cp-null-2", "cp-cred-2", { sig4: "cp-other-cred" });
+    await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
+    expect(total()).toBe(before);
+  });
+
+  it("accepts a well-formed credential vote", async () => {
+    const before = total();
+    const vote = makeCredentialVote("cp-null-3", "cp-cred-3");
+    await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
+    expect(total()).toBe(before + 1);
+  });
+
+  it("rejects a credential vote with an invalid credential proof", async () => {
+    // Exercises the verifyCredential(false) path — the credential-path analogue
+    // of the base "invalid ZK proof" test.
+    const before = total();
+    const vote = makeCredentialVote("cp-null-4", "cp-cred-4");
+    await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysInvalid);
+    expect(total()).toBe(before);
+  });
+});
+
 // ── vote — publicSignals binding (F3) ────────────────────────────────────────
 // The trusted envelope fields (nullifier, choiceIndex) and the target merkleRoot
 // must equal what the proof actually proves, otherwise a single valid proof can be
