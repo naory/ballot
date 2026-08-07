@@ -112,6 +112,34 @@ export async function handleMessage(
       `nullifier=${vote.nullifier}`
     );
 
+    // Bind the trusted envelope fields to what the proof actually proves.
+    // publicSignals ordering (vote & vote_with_credential circuits):
+    //   [0] merkleRoot, [1] nullifierHash, [2] choiceIndex
+    // Without this, a single valid proof could be replayed with a fresh envelope
+    // nullifier (bypassing the UNIQUE dedup → multi-count) or a different
+    // choiceIndex (miscount), and a proof against a foreign root could be counted.
+    if (vote.publicSignals[0] !== (poll.merkle_root as string)) {
+      console.warn(
+        `[indexer] Rejected: merkleRoot mismatch — ` +
+        `publicSignals[0]=${vote.publicSignals[0]}, poll root=${poll.merkle_root}`
+      );
+      return;
+    }
+    if (vote.nullifier !== vote.publicSignals[1]) {
+      console.warn(
+        `[indexer] Rejected: nullifier mismatch — ` +
+        `envelope=${vote.nullifier}, publicSignals[1]=${vote.publicSignals[1]}`
+      );
+      return;
+    }
+    if (String(vote.choiceIndex) !== vote.publicSignals[2]) {
+      console.warn(
+        `[indexer] Rejected: choiceIndex mismatch — ` +
+        `envelope=${vote.choiceIndex}, publicSignals[2]=${vote.publicSignals[2]}`
+      );
+      return;
+    }
+
     // Determine whether this poll requires idOS credential proof
     const idosConfig: IdosConfig | null = poll.idos_config
       ? JSON.parse(poll.idos_config as string)

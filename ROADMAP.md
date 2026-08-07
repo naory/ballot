@@ -57,7 +57,9 @@ Development history and future directions.
 
 ## Potential future work
 
-These are independent tracks and can be prioritized separately.
+These are independent tracks and can be prioritized separately. The target trust,
+custody, and integrity model — and the security flaws these tracks must close — are
+recorded in [DESIGN.md](DESIGN.md).
 
 ### Track A — Make it usable
 
