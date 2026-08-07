@@ -11,9 +11,15 @@ interface MirrorMessage {
   consensus_timestamp: string;
   message: string; // base64
   sequence_number: number;
+  payer_account_id?: string; // account that paid for (submitted) the message
 }
 
-type MessageHandler = (topicId: string, message: unknown, timestamp: string) => void;
+type MessageHandler = (
+  topicId: string,
+  message: unknown,
+  timestamp: string,
+  payerAccountId?: string
+) => void;
 
 export class HCSSubscriber {
   private topics: Map<string, string> = new Map(); // topicId -> lastTimestamp
@@ -59,7 +65,7 @@ export class HCSSubscriber {
           const decoded = JSON.parse(
             Buffer.from(msg.message, "base64").toString("utf-8")
           );
-          this.handler(topicId, decoded, msg.consensus_timestamp);
+          this.handler(topicId, decoded, msg.consensus_timestamp, msg.payer_account_id);
           this.topics.set(topicId, msg.consensus_timestamp);
         }
       } catch (err) {

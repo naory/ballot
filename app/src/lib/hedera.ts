@@ -36,12 +36,18 @@ export function getOperatorClient(): Client {
   return client;
 }
 
-/** Create an HCS topic for a new poll (requires operator credentials — server action) */
+/**
+ * Create an HCS topic for a new poll (requires operator credentials — server action).
+ * The topic is locked with the operator's submit key so only the operator can
+ * publish to it (F6); vote messages must therefore be relayed by the operator.
+ */
 export async function createPollTopic(
   client: Client,
   memo: string
 ): Promise<string> {
-  const tx = new TopicCreateTransaction().setTopicMemo(memo);
+  const tx = new TopicCreateTransaction()
+    .setTopicMemo(memo)
+    .setSubmitKey(client.operatorPublicKey!);
   const response = await tx.execute(client);
   const receipt = await response.getReceipt(client);
   return receipt.topicId!.toString();

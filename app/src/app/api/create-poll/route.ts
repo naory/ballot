@@ -134,9 +134,13 @@ export async function POST(req: NextRequest) {
   // 4. Create a new HCS topic for this poll
   let topicId: string;
   try {
-    const createTx = new TopicCreateTransaction().setTopicMemo(
-      `ballot:${title.slice(0, 80)}`
-    );
+    // Lock the topic with a submit key so only this operator can publish to it
+    // (F6). Without a submit key, anyone who learns the topic ID could inject a
+    // forged poll_created. Consequently, vote messages must be submitted by the
+    // operator/relayer (see DESIGN.md Decision 3), not directly by voters.
+    const createTx = new TopicCreateTransaction()
+      .setTopicMemo(`ballot:${title.slice(0, 80)}`)
+      .setSubmitKey(client.operatorPublicKey!);
     const createResponse = await createTx.execute(client);
     const receipt = await createResponse.getReceipt(client);
     topicId = receipt.topicId!.toString();
