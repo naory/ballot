@@ -121,4 +121,4 @@ indexer/           Node.js service
 - Indexer tests use an **in-memory SQLite DB**: `process.env.DB_PATH = ":memory:"` set before module import. Each test file gets isolation via Vitest's default `pool: 'forks'` behavior.
 - No tests for the Next.js app (UI tests not yet implemented).
 - **Circuit tests require compiled artifacts** in `circuits/build/`. On a fresh clone, run `cd circuits && npm install && npm run compile && npm run setup` before `pnpm test`, otherwise the `@ballot/circuits` suite will fail. The indexer's `verifier.test.ts` mocks snarkjs and does not need artifacts.
-- Circuit artifacts (`vote.vkey.json`) are not available in CI unless compiled first — `verifier.ts` will throw on missing file.
+- Circuit artifacts (`vote.vkey.json`) are not available in CI unless compiled first — a missing verification key is reported clearly at startup (F8) and causes the affected votes to be rejected (the verifiers return `false` rather than throwing).
