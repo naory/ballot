@@ -5,7 +5,14 @@
 
 const MIRROR_BASE =
   process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
-const POLL_INTERVAL_MS = 5_000;
+
+// Liveness model: the subscriber polls each tracked topic every POLL_INTERVAL_MS
+// (default 5s, override via env). Ingestion is at-least-once and eventually
+// consistent — per topic we track the last consensus timestamp and request only
+// messages after it (`timestamp=gt:`), so a transient Mirror Node error just
+// retries on the next tick without skipping messages. There is no real-time SLA;
+// tallies converge within a poll interval of a vote reaching consensus.
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 5_000;
 
 interface MirrorMessage {
   consensus_timestamp: string;
