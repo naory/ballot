@@ -19,7 +19,7 @@ function bytesToField(bytes: Uint8Array): bigint {
 
 /** Deterministic identity secret from a 32-byte seed. */
 export function deriveIdentitySecret(seed: Uint8Array): bigint {
-  return poseidon1([poseidon2([IDENTITY_DOMAIN, bytesToField(seed)])]);
+  return poseidon2([IDENTITY_DOMAIN, bytesToField(seed)]);
 }
 
 /** Public identity commitment = Poseidon([secret]). */

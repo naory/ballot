@@ -23,6 +23,15 @@ describe("deriveIdentitySecret", () => {
       deriveIdentitySecret(new Uint8Array(32).fill(8))
     );
   });
+  it("matches Poseidon([IDENTITY_DOMAIN, bytesToField(seed)]) exactly", () => {
+    // bytesToField(seed) for a 32-byte all-0x07 seed, big-endian, mod FIELD_ORDER:
+    const seedField = ((): bigint => {
+      let acc = 0n;
+      for (const b of new Uint8Array(32).fill(7)) acc = (acc << 8n) | BigInt(b);
+      return acc % FIELD_ORDER;
+    })();
+    expect(deriveIdentitySecret(new Uint8Array(32).fill(7))).toBe(poseidon2([1n, seedField]));
+  });
 });
 
 describe("identityCommitment / voteNullifier", () => {
