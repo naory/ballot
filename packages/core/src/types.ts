@@ -40,6 +40,31 @@ export interface IdosConfig {
   credentialMerkleRoot: string;
 }
 
+/** One eligible identity in a poll's Merkle tree. */
+export interface PollLeaf {
+  /** Public identity commitment = Poseidon(secret). */
+  commitment: string;
+  /** Voting weight bound into the leaf (v1 always "1"). */
+  weight: string;
+}
+
+/** HCS message: a holder binds their account to an identity commitment. */
+export interface HCSRegisterMessage {
+  type: "register";
+  accountId: string;
+  commitment: string;
+  /** Ed25519 signature (hex) by the account key over registrationMessage(). */
+  signature: string;
+  ts?: string;
+}
+
+/** Derived registry entry (indexer view). */
+export interface RegistryEntry {
+  accountId: string;
+  commitment: string;
+  consensusTs: string;
+}
+
 /** A single vote submitted to HCS */
 export interface Vote {
   /** HCS topic ID the vote belongs to */
@@ -81,6 +106,8 @@ export interface HCSVoteMessage {
   choiceIndex: number;
   /** NFT nullifier = Poseidon(serial, secret) */
   nullifier: string;
+  /** Voting weight (public signal [4]); the tally sums this. v1 = "1". */
+  weight: string;
   proof: ZKProof;
   publicSignals: string[];
   /**
@@ -109,6 +136,8 @@ export interface HCSPollMessage {
    * Optional for backwards compatibility with pre-Phase-3 messages.
    */
   serials?: string[];
+  /** Eligible identity commitments + weights (F1/F2). Replaces serials for new polls. */
+  leaves?: PollLeaf[];
   /** Optional idOS credential requirement — see IdosConfig */
   idosConfig?: IdosConfig;
   /**
