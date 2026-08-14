@@ -106,8 +106,12 @@ export interface HCSVoteMessage {
   choiceIndex: number;
   /** NFT nullifier = Poseidon(serial, secret) */
   nullifier: string;
-  /** Voting weight (public signal [4]); the tally sums this. v1 = "1". */
-  weight: string;
+  /**
+   * Voting weight (public signal [4]); the tally sums this. v1 = "1".
+   * Optional at the type level for incremental migration — a vote whose weight
+   * is absent or doesn't equal publicSignals[4] is rejected by the indexer.
+   */
+  weight?: string;
   proof: ZKProof;
   publicSignals: string[];
   /**

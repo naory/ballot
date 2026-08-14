@@ -369,7 +369,7 @@ const FIELD_ORDER =
 const IDENTITY_DOMAIN = 1n;
 
 function identitySecretFromField(seedField) {
-  return poseidon1([poseidon2([IDENTITY_DOMAIN, BigInt(seedField) % FIELD_ORDER])]);
+  return poseidon2([IDENTITY_DOMAIN, BigInt(seedField) % FIELD_ORDER]);
 }
 function identityCommitment(secret) {
   return poseidon1([secret]);
@@ -593,10 +593,10 @@ export interface RegistryEntry {
 }
 ```
 
-In `HCSVoteMessage`, add after `nullifier`:
+In `HCSVoteMessage`, add after `nullifier` (optional for incremental migration; the indexer rejects a vote whose weight ≠ publicSignals[4]):
 ```ts
   /** Voting weight (public signal [4]); the tally sums this. v1 = "1". */
-  weight: string;
+  weight?: string;
 ```
 
 In `HCSPollMessage`, add after `serials?`:
