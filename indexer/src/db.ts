@@ -42,6 +42,7 @@ function migrate(db: Database.Database): void {
       id                    INTEGER PRIMARY KEY AUTOINCREMENT,
       topic_id              TEXT NOT NULL REFERENCES polls(topic_id),
       choice_index          INTEGER NOT NULL,
+      weight                TEXT NOT NULL DEFAULT '1',
       nullifier             TEXT NOT NULL UNIQUE,
       credential_nullifier  TEXT UNIQUE, -- Poseidon(credentialId, credentialSecret), for credential-gated polls
       proof                 TEXT NOT NULL, -- JSON
@@ -49,6 +50,12 @@ function migrate(db: Database.Database): void {
       verified              INTEGER NOT NULL DEFAULT 0,
       consensus_ts          TEXT,
       created_at            TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS registrations (
+      account_id   TEXT PRIMARY KEY,
+      commitment   TEXT NOT NULL,
+      consensus_ts TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_votes_topic ON votes(topic_id);
@@ -61,6 +68,7 @@ function migrate(db: Database.Database): void {
     "ALTER TABLE polls ADD COLUMN idos_config TEXT",
     "ALTER TABLE polls ADD COLUMN credential_ids TEXT",
     "ALTER TABLE votes ADD COLUMN credential_nullifier TEXT UNIQUE",
+    "ALTER TABLE votes ADD COLUMN weight TEXT NOT NULL DEFAULT '1'",
   ]) {
     try { db.exec(sql); } catch { /* column already exists */ }
   }
@@ -107,6 +115,7 @@ export function insertVote(vote: {
   topicId: string;
   choiceIndex: number;
   nullifier: string;
+  weight: string;
   proof: string;
   publicSignals: string[];
   consensusTs?: string;
@@ -115,11 +124,12 @@ export function insertVote(vote: {
   const db = getDb();
   try {
     db.prepare(`
-      INSERT INTO votes (topic_id, choice_index, nullifier, credential_nullifier, proof, public_signals, verified, consensus_ts)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+      INSERT INTO votes (topic_id, choice_index, weight, nullifier, credential_nullifier, proof, public_signals, verified, consensus_ts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
     `).run(
       vote.topicId,
       vote.choiceIndex,
+      vote.weight ?? "1",
       vote.nullifier,
       vote.credentialNullifier ?? null,
       vote.proof,
@@ -138,7 +148,7 @@ export function getTally(topicId: string): { choiceIndex: number; count: number 
   const db = getDb();
   return db
     .prepare(
-      `SELECT choice_index as choiceIndex, COUNT(*) as count
+      `SELECT choice_index as choiceIndex, CAST(SUM(CAST(weight AS INTEGER)) AS INTEGER) as count
        FROM votes WHERE topic_id = ? AND verified = 1
        GROUP BY choice_index ORDER BY choice_index`
     )
@@ -155,4 +165,32 @@ export function getAllPolls() {
 export function getPoll(topicId: string) {
   const db = getDb();
   return db.prepare("SELECT * FROM polls WHERE topic_id = ?").get(topicId);
+}
+
+/** Upsert a registration record (latest-wins on consensus_ts) */
+export function upsertRegistration(r: { accountId: string; commitment: string; consensusTs: string }): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO registrations (account_id, commitment, consensus_ts)
+     VALUES (?, ?, ?)
+     ON CONFLICT(account_id) DO UPDATE SET
+       commitment = excluded.commitment,
+       consensus_ts = excluded.consensus_ts
+     WHERE excluded.consensus_ts > registrations.consensus_ts`
+  ).run(r.accountId, r.commitment, r.consensusTs);
+}
+
+/** Get a registration by account ID */
+export function getRegistration(accountId: string): { commitment: string; consensus_ts: string } | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT commitment, consensus_ts FROM registrations WHERE account_id = ?`).get(accountId) as
+    | { commitment: string; consensus_ts: string }
+    | undefined;
+}
+
+/** Get all registrations */
+export function getAllRegistrations(): { account_id: string; commitment: string }[] {
+  const db = getDb();
+  return db.prepare(`SELECT account_id, commitment FROM registrations`).all() as
+    { account_id: string; commitment: string }[];
 }

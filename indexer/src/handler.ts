@@ -204,6 +204,7 @@ export async function handleMessage(
     const inserted = insertVote({
       topicId:             vote.pollTopicId,
       choiceIndex:         vote.choiceIndex,
+      weight:              "1",
       nullifier:           vote.nullifier,
       proof:               JSON.stringify(vote.proof),
       publicSignals:       vote.publicSignals,
