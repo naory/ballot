@@ -17,7 +17,8 @@ set -euo pipefail
 
 CIRCUITS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$CIRCUITS_DIR/build"
-PTAU="$BUILD_DIR/pot15_final.ptau"
+PTAU14="$BUILD_DIR/pot14_final.ptau"
+PTAU15="$BUILD_DIR/pot15_final.ptau"
 PTAU_URL="https://hermez.s3-eu-west-1.amazonaws.com/powersOfTau28_hez_final_15.ptau"
 
 if [ ! -d "$BUILD_DIR" ]; then
@@ -26,29 +27,34 @@ if [ ! -d "$BUILD_DIR" ]; then
 fi
 
 # ── Phase 1: Powers of Tau ────────────────────────────────────────────────────
-# Download the Hermez pot15 file if not already present.
-# This covers up to 2^15 = 32,768 constraints — well above our circuit's needs.
+# Prefer pot14_final.ptau if present (covers up to 2^14 = 16,384 constraints,
+# sufficient for all current circuits). Fall back to downloading pot15 (~86 MB).
 
-if [ ! -f "$PTAU" ]; then
+if [ -f "$PTAU14" ]; then
+  echo "==> Using existing $PTAU14"
+  PTAU="$PTAU14"
+elif [ -f "$PTAU15" ]; then
+  echo "==> Using existing $PTAU15"
+  PTAU="$PTAU15"
+else
   echo "==> Downloading Hermez pot15_final.ptau (~86 MB)..."
   if command -v curl &>/dev/null; then
-    curl -L -o "$PTAU" "$PTAU_URL"
+    curl -L -o "$PTAU15" "$PTAU_URL"
   elif command -v wget &>/dev/null; then
-    wget -O "$PTAU" "$PTAU_URL"
+    wget -O "$PTAU15" "$PTAU_URL"
   else
     echo "Error: curl or wget required to download the ptau file."
     echo "  Manually download from: $PTAU_URL"
-    echo "  Place it at: $PTAU"
+    echo "  Place it at: $PTAU15"
     exit 1
   fi
-  echo "  -> $PTAU"
-else
-  echo "==> Using existing $PTAU"
+  echo "  -> $PTAU15"
+  PTAU="$PTAU15"
 fi
 
 # ── Phase 2: Circuit-specific key generation ──────────────────────────────────
 
-for CIRCUIT in membership vote vote_with_credential; do
+for CIRCUIT in membership vote_v2 vote_with_credential; do
   echo "==> Phase 2: Setup for $CIRCUIT"
 
   snarkjs groth16 setup \

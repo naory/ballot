@@ -25,8 +25,8 @@ circom "$CIRCUITS_DIR/src/membership.circom" \
   -l "$LIB_DIR" \
   -o "$BUILD_DIR"
 
-echo "==> Compiling vote.circom"
-circom "$CIRCUITS_DIR/src/vote.circom" \
+echo "==> Compiling vote_v2.circom"
+circom "$CIRCUITS_DIR/src/vote_v2.circom" \
   --r1cs --wasm --sym \
   -l "$LIB_DIR" \
   -o "$BUILD_DIR"
