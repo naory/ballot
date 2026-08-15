@@ -12,11 +12,13 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import type { ZKProof } from "@ballot/core";
+import { PrivateKey } from "@hashgraph/sdk";
+import { registrationMessage } from "@ballot/core";
 
 process.env.DB_PATH = ":memory:";
 
 const { handleMessage, parseConsensusTimestamp } = await import("./handler.js");
-const { insertPoll, getTally, getPoll } = await import("./db.js");
+const { insertPoll, getTally, getPoll, getRegistration: dbGetRegistration } = await import("./db.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -407,5 +409,35 @@ describe("handleMessage — publicSignals binding (F3)", () => {
     const before = total();
     await handleMessage(POLL_TOPIC, makeVote("f3-ok", 0), TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before + 1);
+  });
+});
+
+// ── register (F1) ────────────────────────────────────────────────────────────
+
+describe("handleMessage — register (F1)", () => {
+  const key = PrivateKey.generateED25519();
+  const ACCOUNT = "0.0.8888";
+  const COMMIT = "55";
+  const lookup = async (id: string) => (id === ACCOUNT ? key.publicKey.toStringDer() : null);
+
+  it("records a valid registration", async () => {
+    const sig = Buffer.from(key.sign(Buffer.from(registrationMessage(ACCOUNT, COMMIT), "utf-8"))).toString("hex");
+    await handleMessage(
+      "0.0.registry",
+      { type: "register", accountId: ACCOUNT, commitment: COMMIT, signature: sig },
+      "1000.0", noop, alwaysValid, alwaysValid,
+      { accountKeyLookup: lookup }
+    );
+    expect(dbGetRegistration(ACCOUNT)?.commitment).toBe(COMMIT);
+  });
+
+  it("ignores an invalid registration", async () => {
+    await handleMessage(
+      "0.0.registry",
+      { type: "register", accountId: "0.0.7777", commitment: "9", signature: "zz" },
+      "1001.0", noop, alwaysValid, alwaysValid,
+      { accountKeyLookup: lookup }
+    );
+    expect(dbGetRegistration("0.0.7777")).toBeUndefined();
   });
 });

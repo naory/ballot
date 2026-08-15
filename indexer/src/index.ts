@@ -41,6 +41,11 @@ if (!TRUSTED_CREATOR) {
   );
 }
 
+const REGISTRY_TOPIC_ID = process.env.REGISTRY_TOPIC_ID;
+if (!REGISTRY_TOPIC_ID) {
+  console.warn("[indexer] REGISTRY_TOPIC_ID not set — account registrations will not be ingested (F1).");
+}
+
 // Ensure DB + schema exist
 getDb();
 
@@ -66,6 +71,11 @@ const existingPolls = getAllPolls() as { topic_id: string }[];
 for (const poll of existingPolls) {
   subscriber.subscribe(poll.topic_id);
   console.log(`[indexer] Resuming subscription for topic ${poll.topic_id}`);
+}
+
+if (REGISTRY_TOPIC_ID) {
+  subscriber.subscribe(REGISTRY_TOPIC_ID);
+  console.log(`[indexer] Watching registry topic ${REGISTRY_TOPIC_ID}`);
 }
 
 subscriber.start();

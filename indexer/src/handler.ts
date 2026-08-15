@@ -7,7 +7,8 @@
 import { insertPoll, insertVote, getPoll } from "./db.js";
 import { verifyVoteProof as defaultVerify } from "./verifier.js";
 import { verifyCredentialVoteProof as defaultCredentialVerify } from "./verifier_credential.js";
-import type { HCSVoteMessage, HCSPollMessage, ZKProof, IdosConfig } from "@ballot/core";
+import { handleRegister } from "./registry.js";
+import type { HCSVoteMessage, HCSPollMessage, HCSRegisterMessage, ZKProof, IdosConfig } from "@ballot/core";
 
 /**
  * Parse an HCS consensus timestamp ("seconds.nanoseconds") into a Date.
@@ -38,9 +39,19 @@ export async function handleMessage(
   onNewPoll: (topicId: string) => void,
   verify: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultVerify,
   verifyCredential: (proof: ZKProof, signals: string[]) => Promise<boolean> = defaultCredentialVerify,
-  opts: { payerAccountId?: string; trustedCreator?: string } = {}
+  opts: {
+    payerAccountId?: string;
+    trustedCreator?: string;
+    accountKeyLookup?: (id: string) => Promise<string | null>;
+  } = {}
 ): Promise<void> {
   const msg = message as { type: string };
+
+  // ── register ─────────────────────────────────────────────────────────────────
+  if (msg.type === "register") {
+    await handleRegister(message as HCSRegisterMessage, timestamp, opts.accountKeyLookup);
+    return;
+  }
 
   // ── poll_created ────────────────────────────────────────────────────────────
   if (msg.type === "poll_created") {
