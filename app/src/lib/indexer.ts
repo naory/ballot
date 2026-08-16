@@ -32,6 +32,12 @@ export interface PollWithTally {
    * serial is theirs (F4). Absent on the list endpoint.
    */
   serials?: string[];
+  /**
+   * The public eligible set (commitment-weight pairs). Present for identity-commitment
+   * polls so voters can build their Merkle proof client-side without revealing which
+   * commitment is theirs (F1/F2). Absent on the list endpoint.
+   */
+  leaves?: { commitment: string; weight: string }[];
   tally: {
     totalVotes: number;
     counts: PollTallyEntry[];
@@ -59,5 +65,16 @@ export async function fetchPoll(topicId: string): Promise<PollWithTally | null> 
     return res.json();
   } catch {
     return null;
+  }
+}
+
+/** Fetch the registry of account → commitment mappings from the indexer */
+export async function fetchRegistry(): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${INDEXER_URL}/api/registry`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return res.json();
+  } catch {
+    return {};
   }
 }

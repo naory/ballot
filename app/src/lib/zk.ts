@@ -11,6 +11,7 @@
 import * as snarkjs from "snarkjs";
 import { poseidon2 } from "poseidon-lite";
 import type { ZKProof } from "@ballot/core";
+import { buildCommitmentMerkleProof, voteNullifier } from "@ballot/core";
 
 interface ProofInput {
   merkleRoot: string;
@@ -140,4 +141,46 @@ export async function generateVoteWithCredentialProof(
     nullifier,
     credentialNullifier,
   };
+}
+
+/**
+ * Generate a ZK vote proof for identity-commitment voting (F1/F2).
+ * Proves membership in the poll's commitment-weight Merkle tree and produces
+ * a per-poll nullifier from the identity secret.
+ *
+ * Requires:
+ *   /circuits/vote_v2_js/vote_v2.wasm
+ *   /circuits/vote_v2_final.zkey
+ */
+export async function generateVoteProofV2(input: {
+  identitySecret: bigint;
+  leaves: { commitment: string; weight: string }[];
+  myCommitment: string;
+  choiceIndex: number;
+  pollId: bigint;
+}): Promise<{ proof: ZKProof; publicSignals: string[]; nullifier: string; weight: string }> {
+  const wasmPath = "/circuits/vote_v2_js/vote_v2.wasm";
+  const zkeyPath = "/circuits/vote_v2_final.zkey";
+  const { merkleRoot, leafIndex, pathElements, pathIndices } = buildCommitmentMerkleProof(
+    input.leaves,
+    input.myCommitment
+  );
+  const weight = input.leaves[leafIndex].weight;
+  const nullifier = voteNullifier(input.identitySecret, input.pollId).toString();
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    {
+      merkleRoot,
+      nullifierHash: nullifier,
+      choiceIndex: input.choiceIndex,
+      pollId: input.pollId.toString(),
+      weight,
+      identitySecret: input.identitySecret.toString(),
+      pathElements,
+      pathIndices,
+    },
+    wasmPath,
+    zkeyPath
+  );
+  return { proof: proof as ZKProof, publicSignals: publicSignals as string[], nullifier, weight };
 }

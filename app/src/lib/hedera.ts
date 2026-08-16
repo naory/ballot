@@ -11,7 +11,7 @@ import {
   TopicMessageSubmitTransaction,
   TopicId,
 } from "@hashgraph/sdk";
-import type { HCSVoteMessage, HCSPollMessage } from "@ballot/core";
+import type { HCSVoteMessage, HCSPollMessage, HCSRegisterMessage } from "@ballot/core";
 
 /** Get a Hedera client for testnet (browser-side — no operator key) */
 export function getReadOnlyClient(): Client {
@@ -73,6 +73,18 @@ export async function publishPollMetadata(
 ): Promise<void> {
   const tx = new TopicMessageSubmitTransaction()
     .setTopicId(TopicId.fromString(topicId))
+    .setMessage(JSON.stringify(message));
+  await tx.execute(client);
+}
+
+/** Submit a register message to the registry topic */
+export async function submitRegister(
+  client: Client,
+  registryTopicId: string,
+  message: HCSRegisterMessage
+): Promise<void> {
+  const tx = new TopicMessageSubmitTransaction()
+    .setTopicId(TopicId.fromString(registryTopicId))
     .setMessage(JSON.stringify(message));
   await tx.execute(client);
 }
