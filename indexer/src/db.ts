@@ -5,7 +5,7 @@
 
 import Database from "better-sqlite3";
 import path from "node:path";
-import type { IdosConfig } from "@ballot/core";
+import type { IdosConfig, PollLeaf } from "@ballot/core";
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "ballot.sqlite");
 
@@ -35,6 +35,7 @@ function migrate(db: Database.Database): void {
       creator           TEXT,
       idos_config       TEXT,          -- JSON IdosConfig (optional)
       credential_ids    TEXT,          -- JSON array of credential ID strings (snapshot)
+      leaves            TEXT,          -- JSON array of PollLeaf {commitment, weight} (optional)
       created_at        TEXT DEFAULT (datetime('now'))
     );
 
@@ -67,6 +68,7 @@ function migrate(db: Database.Database): void {
     "ALTER TABLE polls ADD COLUMN serials TEXT",
     "ALTER TABLE polls ADD COLUMN idos_config TEXT",
     "ALTER TABLE polls ADD COLUMN credential_ids TEXT",
+    "ALTER TABLE polls ADD COLUMN leaves TEXT",
     "ALTER TABLE votes ADD COLUMN credential_nullifier TEXT UNIQUE",
     "ALTER TABLE votes ADD COLUMN weight TEXT NOT NULL DEFAULT '1'",
   ]) {
@@ -88,12 +90,13 @@ export function insertPoll(poll: {
   creator?: string;
   idosConfig?: IdosConfig;
   credentialIds?: string[];
+  leaves?: PollLeaf[];
 }): void {
   const db = getDb();
   db.prepare(`
     INSERT OR IGNORE INTO polls
-      (topic_id, title, description, choices, token_id, merkle_root, serials, starts_at, ends_at, creator, idos_config, credential_ids)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (topic_id, title, description, choices, token_id, merkle_root, serials, starts_at, ends_at, creator, idos_config, credential_ids, leaves)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     poll.topicId,
     poll.title,
@@ -106,7 +109,8 @@ export function insertPoll(poll: {
     poll.endsAt,
     poll.creator ?? null,
     poll.idosConfig ? JSON.stringify(poll.idosConfig) : null,
-    poll.credentialIds ? JSON.stringify(poll.credentialIds) : null
+    poll.credentialIds ? JSON.stringify(poll.credentialIds) : null,
+    poll.leaves ? JSON.stringify(poll.leaves) : null
   );
 }
 

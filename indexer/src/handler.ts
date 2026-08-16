@@ -85,6 +85,7 @@ export async function handleMessage(
       endsAt:        poll.endsAt,
       idosConfig:    poll.idosConfig,
       credentialIds: poll.credentialIds,
+      leaves:        poll.leaves,
     });
     onNewPoll(topicId);
     return;

@@ -41,6 +41,19 @@ describe("insertPoll / getPoll / getAllPolls", () => {
     expect(JSON.parse(row.serials as string)).toEqual(["1", "2", "3"]);
   });
 
+  it("stores leaves as JSON and round-trips them", () => {
+    const leaves = [{ commitment: "111", weight: "1" }, { commitment: "222", weight: "2" }];
+    insertPoll({ ...basePoll, topicId: "0.0.1005", leaves });
+    const row = getPoll("0.0.1005") as Record<string, unknown>;
+    expect(JSON.parse(row.leaves as string)).toEqual(leaves);
+  });
+
+  it("leaves is null when omitted", () => {
+    insertPoll({ ...basePoll, topicId: "0.0.1006" });
+    const row = getPoll("0.0.1006") as Record<string, unknown>;
+    expect(row.leaves).toBeNull();
+  });
+
   it("stores description when provided", () => {
     insertPoll({ ...basePoll, topicId: "0.0.1003", description: "Desc here" });
     const row = getPoll("0.0.1003") as Record<string, unknown>;
