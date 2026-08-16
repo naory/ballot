@@ -1,34 +1,23 @@
 # Ballot
 
-**Private, token-gated voting on Hedera using zero-knowledge proofs.**
+**Private, identity-commitment-gated voting on Hedera using zero-knowledge proofs.**
 
-Ballot lets NFT communities run anonymous polls where voters prove eligibility without revealing their identity. Votes are submitted to Hedera Consensus Service (HCS), verified server-side with ZK proofs, and tallied by a lightweight indexer.
+Ballot lets communities run anonymous polls where voters prove eligibility without revealing their identity. Voters register an identity commitment on a shared HCS registry topic once; the poll creator snapshots those commitments into a Merkle tree. Votes are submitted to Hedera Consensus Service (HCS), verified server-side with ZK proofs, and tallied by a lightweight indexer.
 
 ## Features
 
-### NFT-gated voting
+### Identity-commitment voting
 
-Any Hedera HTS NFT token can gate a poll. At poll creation time, the app snapshots all current NFT holders and commits their serial numbers into a Merkle tree. Voters then prove — using a Groth16 ZK proof — that they own a serial in that tree, without revealing which one.
+Eligibility is proven via a one-time **registration** step. Before a poll opens, a voter publishes a `register` message — containing `commitment = Poseidon(identitySecret)` and a signature — to a shared HCS **registry topic**. The indexer verifies the signature against the voter's Hedera account key and records the commitment.
 
-- **Privacy**: The proof reveals nothing about which NFT you hold.
-- **Sybil resistance**: Each serial can vote once, enforced by a nullifier: `Poseidon(serial, secret)`. The nullifier is stored publicly; the serial stays private.
-- **Snapshot integrity**: Eligibility is fixed at poll creation. Transferring your NFT after the snapshot does not affect your voting right.
+At poll creation time, the app snapshots registered commitments and commits them (as `Poseidon(commitment, weight)` leaves) into a Poseidon Merkle tree. Voters then prove — using a Groth16 ZK proof (`vote_v2.circom`) — that they know the `identitySecret` behind a leaf in that tree, without revealing which one.
 
-### idOS credential-gated voting
+- **Privacy**: The proof reveals `{nullifier, choice, pollId, weight}` — nothing that links back to the voter's account or commitment.
+- **Sybil resistance**: Nullifier = `Poseidon(identitySecret, pollId)` — deterministic and poll-scoped. One identity can produce exactly one nullifier per poll; picking a fresh secret is not possible. The nullifier is stored publicly; the secret stays on-device.
+- **Weighted votes**: Each leaf encodes a weight; the tally sums weights rather than counting heads. Default polls use weight = `"1"` (unweighted).
+- **Snapshot integrity**: Eligibility is fixed at poll creation. Registering after the snapshot does not affect the current poll.
 
-Polls can optionally require an [idOS](https://idos.network) credential in addition to NFT ownership — enabling "verified human, anonymous vote" for stronger sybil resistance (e.g. KYC or proof-of-humanity without doxing voters).
-
-When a poll is created with `idosConfig`, it includes a second Merkle tree of valid credential IDs from the specified issuer. Voters must generate a proof using a separate `vote_with_credential` circuit that simultaneously proves:
-
-1. NFT membership in the NFT Merkle tree
-2. NFT nullifier (prevents double-voting with the same NFT)
-3. Credential membership in the credential Merkle tree
-4. Credential nullifier: `Poseidon(credentialId, credentialSecret)` (prevents reusing the same credential across votes)
-5. Valid choice index (0–255)
-
-Both nullifiers are stored by the indexer. A vote is rejected if either has been seen before.
-
-Polls that do **not** require idOS credentials use the standard `vote.circom` circuit and are entirely unaffected by this feature.
+> **Note on credential-gated polls:** Polls with `idosConfig` (idOS credential requirement) are **currently disabled** — the indexer rejects credential-gated votes and poll creation rejects `idosConfig` parameters. This feature is pending F7 (idOS + wallet integration).
 
 ### Verifiability
 
@@ -65,11 +54,13 @@ Anyone can independently verify the full tally:
 
 ### Data flow
 
-1. **Poll creation** — Creator picks an HTS token and choices. The server action snapshots NFT holders via Mirror Node, builds a Poseidon Merkle tree, creates an HCS topic, and publishes `poll_created` (with `merkleRoot` and `serials[]`). For idOS polls, a second credential Merkle tree is also committed.
+1. **Registration (one-time)** — Before a poll opens, each voter publishes a `register` message to the shared HCS registry topic (`REGISTRY_TOPIC_ID`). The message contains `commitment = Poseidon(identitySecret)` and a signature over the commitment. The indexer verifies the signature against the account's on-chain key and stores the commitment.
 
-2. **Voting** — The voter enters their NFT serial and a secret. The app builds the Merkle proof **in-browser** from the poll's public eligible set (so the serial never leaves the device — see [DESIGN.md](DESIGN.md) F4), generates a Groth16 proof client-side, and submits a `vote` HCS message. For idOS polls, the app additionally uses the `vote_with_credential` circuit.
+2. **Poll creation** — Creator picks choices and a snapshot window. The server action fetches registered commitments from the indexer, builds a Poseidon Merkle tree (leaves = `Poseidon(commitment, weight)`), creates an HCS topic, and publishes `poll_created` (with `merkleRoot` and `leaves[]`). Credential-gated polls (`idosConfig`) are rejected — pending F7.
 
-3. **Indexing** — The indexer subscribes to poll topics. On each `vote` message it verifies the ZK proof, checks both nullifiers for uniqueness, and records the vote. Results are served via GraphQL and REST.
+3. **Voting** — The voter's `identitySecret` is used client-side to locate their leaf and build the Merkle proof **in-browser** (see [DESIGN.md](DESIGN.md) F4). The app generates a Groth16 proof (`vote_v2.circom`) with public signals `[merkleRoot, nullifierHash, choiceIndex, pollId, weight]` and submits a `vote` HCS message. Nullifier = `Poseidon(identitySecret, pollId)` — one per identity per poll.
+
+4. **Indexing** — The indexer subscribes to poll topics. On each `vote` message it binds envelope fields to `publicSignals` (F3), verifies the ZK proof, deduplicates nullifiers, and records the vote (with weight). Results are served via GraphQL and REST. Tally sums weight rather than counting raw votes.
 
 ## Project structure
 
@@ -148,9 +139,10 @@ Copy `app/.env.example` to `app/.env.local`:
 | `HEDERA_OPERATOR_KEY` | Hedera private key — server-side only |
 | `NEXT_PUBLIC_INDEXER_URL` | Indexer GraphQL endpoint |
 | `NEXT_PUBLIC_MIRROR_NODE_URL` | Hedera Mirror Node REST URL |
+| `NEXT_PUBLIC_REGISTRY_TOPIC_ID` | HCS topic ID for identity-commitment registration (e.g. `0.0.XXXXX`). The `RegisterButton` component publishes voter commitments here. |
 | `CREATE_POLL_API_KEY` | Server-side. When set, `POST /api/create-poll` requires `Authorization: Bearer <key>` (see [DESIGN.md](DESIGN.md) F5). If unset, the endpoint is unauthenticated. |
 
-The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, `BALLOT_CREATOR_ACCOUNT_ID` (accounts allowed to define polls; defaults to `HEDERA_OPERATOR_ID`, see [DESIGN.md](DESIGN.md) F6), `ALLOWED_ORIGINS` (comma-separated CORS allowlist; unset ⇒ permissive `*`, see [DESIGN.md](DESIGN.md) F5), and `POLL_INTERVAL_MS` (Mirror Node poll cadence; default `5000`).
+The indexer is configured via shell variables: `PORT` (default `4000`), `DB_PATH` (default `ballot.sqlite`), `VKEY_PATH`, `CREDENTIAL_VKEY_PATH`, `BALLOT_CREATOR_ACCOUNT_ID` (accounts allowed to define polls; defaults to `HEDERA_OPERATOR_ID`, see [DESIGN.md](DESIGN.md) F6), `REGISTRY_TOPIC_ID` (the same HCS registry topic watched for `register` messages; if unset the indexer logs a warning and skips registration ingestion), `ALLOWED_ORIGINS` (comma-separated CORS allowlist; unset ⇒ permissive `*`, see [DESIGN.md](DESIGN.md) F5), and `POLL_INTERVAL_MS` (Mirror Node poll cadence; default `5000`).
 
 At startup the indexer preflights the verification keys and logs whether each is available; a missing key is reported clearly and causes the affected votes to be rejected (rather than silently failing) until it is provided. HCS ingestion is at-least-once and eventually consistent — see the liveness note in `indexer/src/subscriber.ts`.
 

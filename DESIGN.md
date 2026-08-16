@@ -13,9 +13,9 @@ motivate them:
 It also records the **known flaws** in the current implementation and the fix
 for each, since the decisions below are chosen partly to close them.
 
-> Status: **accepted / not yet implemented.** These describe the target design.
-> The current code (Phases 1–6) does not yet enforce most of it — see
-> [Known flaws](#known-flaws--remediations).
+> Status: **accepted / partially implemented.** F1 and F2 are implemented via
+> the identity-commitment model and `vote_v2.circom` (see below). F3–F8 remain as
+> noted in [Known flaws](#known-flaws--remediations).
 
 ---
 
@@ -263,8 +263,8 @@ the decisions above are chosen to close.
 
 | ID | Severity | Flaw | Remediation |
 |---|---|---|---|
-| **F1** | 🔴 Critical | **No ownership proof.** The eligible `serials[]` are published publicly in `poll_created`; the circuit only proves "I know a serial in the set," which everyone does. Anyone can vote with any serial. | Bind an **ownership signature** into the proof: the leaf becomes a commitment to the voter's key (Decision 1), and the circuit requires a signature/knowledge-of-key over a poll-specific challenge. Non-holders can no longer produce a valid proof. |
-| **F2** | 🔴 Critical | **Unlimited double-voting.** `nullifier = Poseidon(serial, secret)` where `secret` is a random value the voter picks (`getOrCreateSecret`, localStorage). One serial → unlimited nullifiers by choosing new secrets. | Make the secret **deterministic and identity-bound** — derived once from the wallet key via a fixed HKDF/derivation (Decision 3), never voter-chosen. One identity ⇒ exactly one nullifier per poll. |
+| **F1** | 🔴 Critical ✅ | **No ownership proof.** The eligible `serials[]` are published publicly in `poll_created`; the circuit only proves "I know a serial in the set," which everyone does. Anyone can vote with any serial. | **IMPLEMENTED** (identity-commitment model, [F1/F2 plan](sdd/)): voters register a `commitment = Poseidon(identitySecret)` on a public HCS **registry topic** (`REGISTRY_TOPIC_ID`). The poll's Merkle tree contains `Poseidon(commitment, weight)` leaves rather than raw serials. Only a holder of `identitySecret` can generate a valid proof — the secret never leaves the device. |
+| **F2** | 🔴 Critical ✅ | **Unlimited double-voting.** `nullifier = Poseidon(serial, secret)` where `secret` is a random value the voter picks (`getOrCreateSecret`, localStorage). One serial → unlimited nullifiers by choosing new secrets. | **IMPLEMENTED** (identity-commitment model): nullifier is now `Poseidon(identitySecret, pollId)` — deterministic and poll-scoped. One identity ⇒ exactly one nullifier per poll; choosing a fresh secret no longer helps. |
 | **F3** | 🔴 Critical | **Envelope not bound to the proof.** In the non-credential path, `handler.ts` never checks `vote.nullifier == publicSignals[1]` or `vote.choiceIndex == publicSignals[2]`; the credential path also never binds `publicSignals[3]` (credentialMerkleRoot) to the poll's committed credential root. An attacker can resubmit one valid proof with a fresh `nullifier` (bypassing the UNIQUE dedup → multi-count), a different `choiceIndex` (miscount), or a proof against a foreign credential set. | In `handler.ts`, assert every trusted envelope field equals its `publicSignals` slot **before** dedup/insert: `nullifier`, `choiceIndex`, `publicSignals[ROOT_IDX] == poll.merkle_root`, and — for credential polls — `credentialNullifier == publicSignals[4]` and `credentialMerkleRoot == publicSignals[3]`. Encoded as step 4d in the verifier (Decision 2). |
 | **F4** | 🟠 High | **Privacy leak via merkle-proof endpoint.** `fetchMerkleProof(topicId, serial)` sends the serial in cleartext to the indexer, which can correlate it (by timing/IP) with the resulting vote. | Generate the Merkle proof **client-side** from the `serials[]`/commitments already in `poll_created`. The indexer never learns the serial. Remove/deprecate the server-side proof endpoints. |
 | **F5** | 🟠 High | **Unauthenticated poll creation + open CORS.** `/api/create-poll` has no auth or rate limit and spends the operator's HBAR per call; the indexer sets `Access-Control-Allow-Origin: *`. Trivial fund-drain / DoS. | Gate `/api/create-poll` with an API key (`CREATE_POLL_API_KEY`, `Authorization: Bearer`) and a per-client fixed-window rate limiter, both checked before any Hedera work. Scope the indexer's CORS to `ALLOWED_ORIGINS` (unset ⇒ permissive `*` for the read-only endpoints). A wallet-signature creator gate supersedes the API key once the wallet lands (Decision 3). |
@@ -274,9 +274,9 @@ the decisions above are chosen to close.
 
 ### Fix ordering
 
-1. **F3** (envelope binding) — smallest change, closes a critical multi-count hole immediately.
+1. **F3** (envelope binding) — smallest change, closes a critical multi-count hole immediately. ✅ Implemented.
 2. **F4** (client-side Merkle proof) — removes the privacy leak; also unblocks Decision 2's "indexer is untrusted" stance.
-3. **F1 + F2** (ownership proof + deterministic secret) — the circuit + wallet work; the substantive integrity fix. Couples with Decisions 1 and 3.
+3. **F1 + F2** (ownership proof + deterministic secret) — the circuit + wallet work; the substantive integrity fix. Couples with Decisions 1 and 3. ✅ Implemented (identity-commitment model + `vote_v2.circom`; wallet stub in place pending Decision 3).
 4. **F6, F5** — topic submit keys and endpoint hardening.
 5. **F7, F8** — idOS wiring and ops, after the wallet lands.
 
