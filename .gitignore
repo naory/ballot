@@ -22,6 +22,8 @@ app/public/circuits/
 # SQLite
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 
 # OS
 .DS_Store
