@@ -31,16 +31,6 @@ interface ProofResult {
   nullifier: string;
 }
 
-/** Verify a proof client-side (for testing / immediate UI feedback before HCS submission) */
-export async function verifyProof(
-  proof: ZKProof,
-  publicSignals: string[]
-): Promise<boolean> {
-  const vkeyRes = await fetch("/circuits/vote.vkey.json");
-  const vkey = await vkeyRes.json();
-  return snarkjs.groth16.verify(vkey, publicSignals, proof);
-}
-
 interface CredentialProofInput extends ProofInput {
   credentialMerkleRoot: string;
   credentialId: string;

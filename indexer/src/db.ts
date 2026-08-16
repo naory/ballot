@@ -180,6 +180,9 @@ export function upsertRegistration(r: { accountId: string; commitment: string; c
      ON CONFLICT(account_id) DO UPDATE SET
        commitment = excluded.commitment,
        consensus_ts = excluded.consensus_ts
+     -- Lexicographic string comparison is valid here: Hedera timestamps are
+     -- "seconds.nanoseconds" where seconds is a 10-digit integer, so
+     -- lexicographic order == numeric order (latest-wins).
      WHERE excluded.consensus_ts > registrations.consensus_ts`
   ).run(r.accountId, r.commitment, r.consensusTs);
 }

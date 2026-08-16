@@ -57,20 +57,18 @@ interface CreatePollBody {
   choices: string[];
   startsAt: string;
   endsAt: string;
-  /** Optional idOS credential requirement. When present, credentialIds must also be provided. */
+  /** Optional idOS credential requirement. When present, the request is rejected until F7 is implemented. */
   idosConfig?: IdosConfig;
-  /** Credential IDs snapshot (required when idosConfig is set) */
-  credentialIds?: string[];
 }
 
-async function fetchNftHolders(tokenId: string): Promise<{ serial: string; account: string }[]> {
-  const out: { serial: string; account: string }[] = [];
+async function fetchNftHolders(tokenId: string): Promise<{ account: string }[]> {
+  const out: { account: string }[] = [];
   let url: string | null = `${MIRROR_BASE}/api/v1/tokens/${tokenId}/nfts?limit=100&order=asc`;
   while (url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Mirror Node ${res.status} fetching holders for ${tokenId}`);
-    const data = (await res.json()) as { nfts: { serial_number: number; account_id: string }[]; links?: { next?: string } };
-    for (const n of data.nfts) out.push({ serial: String(n.serial_number), account: n.account_id });
+    const data = (await res.json()) as { nfts: { account_id: string }[]; links?: { next?: string } };
+    for (const n of data.nfts) out.push({ account: n.account_id });
     url = data.links?.next ? `${MIRROR_BASE}${data.links.next}` : null;
   }
   return out;
@@ -131,8 +129,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 1. Snapshot NFT holders (account + serial) from Mirror Node
-  let holders: { serial: string; account: string }[];
+  // 1. Snapshot NFT holders (account) from Mirror Node
+  let holders: { account: string }[];
   try {
     holders = await fetchNftHolders(tokenId);
   } catch (err) {

@@ -142,8 +142,8 @@ export async function handleMessage(
     );
 
     // Bind the trusted envelope fields to what the proof actually proves.
-    // publicSignals ordering (vote & vote_with_credential circuits):
-    //   [0] merkleRoot, [1] nullifierHash, [2] choiceIndex
+    // publicSignals ordering (vote_v2 circuit):
+    //   [0] merkleRoot, [1] nullifierHash, [2] choiceIndex, [3] pollId, [4] weight
     // Without this, a single valid proof could be replayed with a fresh envelope
     // nullifier (bypassing the UNIQUE dedup → multi-count) or a different
     // choiceIndex (miscount), and a proof against a foreign root could be counted.
