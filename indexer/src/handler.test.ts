@@ -374,8 +374,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 0,
       nullifier: "f3-envelope-null",              // envelope value
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["777", "f3-proven-null", "0"], // proof proves a different nullifier
+      publicSignals: ["777", "f3-proven-null", "0", POLL_ID, "1"], // proof proves a different nullifier
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
@@ -388,8 +389,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 1,                              // envelope says choice 1
       nullifier: "f3-choice",
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["777", "f3-choice", "0"],    // proof proves choice 0
+      publicSignals: ["777", "f3-choice", "0", POLL_ID, "1"],    // proof proves choice 0
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
@@ -402,8 +404,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 0,
       nullifier: "f3-root",
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["999", "f3-root", "0"],      // proof is against a different root
+      publicSignals: ["999", "f3-root", "0", POLL_ID, "1"],      // proof is against a different root
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
