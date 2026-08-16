@@ -9,6 +9,7 @@ import { verifyVoteProof as defaultVerify } from "./verifier.js";
 import { verifyCredentialVoteProof as defaultCredentialVerify } from "./verifier_credential.js";
 import { handleRegister } from "./registry.js";
 import type { HCSVoteMessage, HCSPollMessage, HCSRegisterMessage, ZKProof, IdosConfig } from "@ballot/core";
+import { pollIdFromTopic } from "@ballot/core";
 
 /**
  * Parse an HCS consensus timestamp ("seconds.nanoseconds") into a Date.
@@ -167,60 +168,47 @@ export async function handleMessage(
       return;
     }
 
+    // pollId binding (cross-poll nullifier replay guard) — recomputed, never trusted from envelope.
+    let expectedPollId: string;
+    try {
+      expectedPollId = pollIdFromTopic(vote.pollTopicId).toString();
+    } catch {
+      console.warn(`[indexer] Rejected: unsupported topic id for pollId ${vote.pollTopicId}`);
+      return;
+    }
+    if (vote.publicSignals[3] !== expectedPollId) {
+      console.warn(`[indexer] Rejected: pollId mismatch — publicSignals[3]=${vote.publicSignals[3]}, expected=${expectedPollId}`);
+      return;
+    }
+    // weight binding
+    if (String(vote.weight) !== vote.publicSignals[4]) {
+      console.warn(`[indexer] Rejected: weight mismatch — envelope=${vote.weight}, publicSignals[4]=${vote.publicSignals[4]}`);
+      return;
+    }
+
     // Determine whether this poll requires idOS credential proof
     const idosConfig: IdosConfig | null = poll.idos_config
       ? JSON.parse(poll.idos_config as string)
       : null;
 
     if (idosConfig) {
-      // Credential-gated poll: must use the vote_with_credential circuit
-      if (!vote.credentialNullifier) {
-        console.warn(`[indexer] Rejected: credential-gated poll requires credentialNullifier`);
-        return;
-      }
-      // publicSignals[3] = credentialMerkleRoot. Bind it to the poll's committed
-      // credential root so a proof against a *different* credential set (e.g. one
-      // the attacker controls) cannot be counted as eligible for this poll.
-      if (vote.publicSignals[3] !== idosConfig.credentialMerkleRoot) {
-        console.warn(
-          `[indexer] Rejected: credentialMerkleRoot mismatch — ` +
-          `publicSignals[3]=${vote.publicSignals[3]}, poll credential root=${idosConfig.credentialMerkleRoot}`
-        );
-        return;
-      }
-      // publicSignals[4] = credentialNullifier in the vote_with_credential circuit.
-      // Verify the envelope value matches what the proof actually proves — prevents
-      // a nullifier substitution attack where a valid proof is submitted with a
-      // different credentialNullifier in the message body to bypass deduplication.
-      if (vote.credentialNullifier !== vote.publicSignals[4]) {
-        console.warn(
-          `[indexer] Rejected: credentialNullifier mismatch — ` +
-          `envelope=${vote.credentialNullifier}, publicSignals[4]=${vote.publicSignals[4]}`
-        );
-        return;
-      }
-      const credValid = await verifyCredential(vote.proof, vote.publicSignals);
-      if (!credValid) {
-        console.warn(`[indexer] Rejected: invalid credential ZK proof for nullifier ${vote.nullifier}`);
-        return;
-      }
-    } else {
-      const valid = await verify(vote.proof, vote.publicSignals);
-      if (!valid) {
-        console.warn(`[indexer] Rejected: invalid ZK proof for nullifier ${vote.nullifier}`);
-        return;
-      }
+      console.warn(`[indexer] Rejected: credential-gated polls are disabled pending F7`);
+      return;
+    }
+    const valid = await verify(vote.proof, vote.publicSignals);
+    if (!valid) {
+      console.warn(`[indexer] Rejected: invalid ZK proof for nullifier ${vote.nullifier}`);
+      return;
     }
 
     const inserted = insertVote({
-      topicId:             vote.pollTopicId,
-      choiceIndex:         vote.choiceIndex,
-      weight:              "1",
-      nullifier:           vote.nullifier,
-      proof:               JSON.stringify(vote.proof),
-      publicSignals:       vote.publicSignals,
-      consensusTs:         timestamp,
-      credentialNullifier: vote.credentialNullifier,
+      topicId:       vote.pollTopicId,
+      choiceIndex:   vote.choiceIndex,
+      weight:        vote.weight ?? "1",
+      nullifier:     vote.nullifier,
+      proof:         JSON.stringify(vote.proof),
+      publicSignals: vote.publicSignals,
+      consensusTs:   timestamp,
     });
 
     if (!inserted) {

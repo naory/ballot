@@ -12,8 +12,8 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import type { ZKProof } from "@ballot/core";
+import { pollIdFromTopic, registrationMessage } from "@ballot/core";
 import { PrivateKey } from "@hashgraph/sdk";
-import { registrationMessage } from "@ballot/core";
 
 process.env.DB_PATH = ":memory:";
 
@@ -61,14 +61,17 @@ const basePoll = {
   endsAt:    ENDS_AT,
 };
 
+const POLL_ID = pollIdFromTopic(POLL_TOPIC).toString();
+
 function makeVote(nullifier: string, choiceIndex = 0) {
   return {
     type: "vote" as const,
     pollTopicId: POLL_TOPIC,
     choiceIndex,
     nullifier,
+    weight: "1",
     proof: fakeProof,
-    publicSignals: ["777", nullifier, String(choiceIndex)],
+    publicSignals: ["777", nullifier, String(choiceIndex), POLL_ID, "1"],
   };
 }
 
@@ -338,16 +341,17 @@ describe("handleMessage — credential path binding (F3)", () => {
     expect(total()).toBe(before);
   });
 
-  it("accepts a well-formed credential vote", async () => {
+  it("rejects a credential-gated poll vote (disabled pending F7)", async () => {
+    // Credential-gated polls are disabled: any vote targeting a poll with idosConfig
+    // must be rejected regardless of proof validity.
     const before = total();
     const vote = makeCredentialVote("cp-null-3", "cp-cred-3");
     await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
-    expect(total()).toBe(before + 1);
+    expect(total()).toBe(before);
   });
 
-  it("rejects a credential vote with an invalid credential proof", async () => {
-    // Exercises the verifyCredential(false) path — the credential-path analogue
-    // of the base "invalid ZK proof" test.
+  it("rejects a credential-gated poll vote even with invalid proof (disabled pending F7)", async () => {
+    // Credential path disabled — rejection is at idosConfig check, not proof verification.
     const before = total();
     const vote = makeCredentialVote("cp-null-4", "cp-cred-4");
     await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysInvalid);
@@ -439,5 +443,47 @@ describe("handleMessage — register (F1)", () => {
       { accountKeyLookup: lookup }
     );
     expect(dbGetRegistration("0.0.7777")).toBeUndefined();
+  });
+});
+
+// ── vote — v2 binding (F1/F2) ─────────────────────────────────────────────────
+// vote_v2 public signals: [merkleRoot, nullifier, choiceIndex, pollId, weight]
+// pollId is recomputed server-side (never trusted from the envelope).
+// weight must match publicSignals[4] and is stored/tallied.
+
+describe("handleMessage — vote_v2 binding (F1/F2)", () => {
+  const TOPIC = "0.0.6100";
+  const POLL_ID = pollIdFromTopic(TOPIC).toString();
+  const total = () => getTally(TOPIC).reduce((s, r) => s + r.count, 0);
+
+  beforeAll(() => {
+    insertPoll({
+      topicId: TOPIC, title: "v2", choices: ["Yes", "No"], tokenId: "0.0.1",
+      merkleRoot: "777", startsAt: STARTS_AT, endsAt: ENDS_AT,
+    });
+  });
+
+  function v2Vote(nullifier: string, weight = "1", overrides: Partial<Record<"root"|"choice"|"pollId"|"weight", string>> = {}) {
+    return {
+      type: "vote" as const, pollTopicId: TOPIC, choiceIndex: 0, nullifier, weight,
+      proof: fakeProof,
+      publicSignals: [overrides.root ?? "777", nullifier, overrides.choice ?? "0", overrides.pollId ?? POLL_ID, overrides.weight ?? weight],
+    };
+  }
+
+  it("accepts a well-formed v2 vote and tallies its weight", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-a", "3"), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before + 3);
+  });
+  it("rejects a pollId mismatch (cross-poll replay)", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-b", "1", { pollId: "999999" }), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
+  });
+  it("rejects a weight/publicSignals[4] mismatch", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-c", "5", { weight: "1" }), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
   });
 });
