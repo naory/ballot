@@ -24,7 +24,7 @@ type Step =
   | { kind: "submitted"; nullifier: string }
   | { kind: "error"; message: string };
 
-export function VoteForm({ topicId, choices, merkleRoot: _merkleRoot, leaves }: VoteFormProps) {
+export function VoteForm({ topicId, choices, merkleRoot, leaves }: VoteFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [step, setStep] = useState<Step>({ kind: "idle" });
 
@@ -78,6 +78,11 @@ export function VoteForm({ topicId, choices, merkleRoot: _merkleRoot, leaves }: 
         choiceIndex: selected,
         pollId,
       });
+
+      // Merkle root mismatch guard: publicSignals[0] is the root the proof was built against
+      if (publicSignals[0] !== merkleRoot) {
+        throw new Error("Merkle root mismatch — the eligible set may have changed. Refresh the page.");
+      }
 
       setStep({ kind: "proved", proof, publicSignals, nullifier, weight });
     } catch (err) {
