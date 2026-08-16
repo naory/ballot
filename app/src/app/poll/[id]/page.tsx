@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { VoteForm } from "@/components/VoteForm";
 import { Results } from "@/components/Results";
+import { RegisterButton } from "@/components/RegisterButton";
 import { fetchPoll } from "@/lib/indexer";
 
 interface Props {
@@ -30,11 +31,14 @@ export default async function PollPage({ params }: Props) {
       <div className="grid gap-8 md:grid-cols-2">
         <div>
           <h2 className="mb-4 text-lg font-semibold">Cast Your Vote</h2>
+          <div className="mb-4">
+            <RegisterButton />
+          </div>
           <VoteForm
             topicId={topicId}
             choices={poll.choices}
             merkleRoot={poll.merkleRoot}
-            serials={poll.serials ?? []}
+            leaves={poll.leaves ?? []}
           />
         </div>
         <div>
