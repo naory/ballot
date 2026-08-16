@@ -66,6 +66,7 @@ NEXT_PUBLIC_HEDERA_OPERATOR_ID=0.0.XXXXX
 HEDERA_OPERATOR_KEY=302e...           # server-side only
 NEXT_PUBLIC_INDEXER_URL=http://localhost:4000/graphql
 NEXT_PUBLIC_MIRROR_NODE_URL=https://testnet.mirrornode.hedera.com
+NEXT_PUBLIC_REGISTRY_TOPIC_ID=0.0.XXXXX # HCS registry topic for account->commitment (F1/F2)
 CREATE_POLL_API_KEY=...                # server-side; gates POST /api/create-poll (F5)
 ```
 
@@ -128,4 +129,4 @@ indexer/           Node.js service
 - Indexer tests use an **in-memory SQLite DB**: `process.env.DB_PATH = ":memory:"` set before module import. Each test file gets isolation via Vitest's default `pool: 'forks'` behavior.
 - No tests for the Next.js app (UI tests not yet implemented).
 - **Circuit tests require compiled artifacts** in `circuits/build/`. On a fresh clone, run `cd circuits && npm install && npm run compile && npm run setup` before `pnpm test`, otherwise the `@ballot/circuits` suite will fail. The indexer's `verifier.test.ts` mocks snarkjs and does not need artifacts.
-- Circuit artifacts (`vote.vkey.json`) are not available in CI unless compiled first — a missing verification key is reported clearly at startup (F8) and causes the affected votes to be rejected (the verifiers return `false` rather than throwing).
+- Circuit artifacts (`vote_v2.vkey.json`) are not available in CI unless compiled first — a missing verification key is reported clearly at startup (F8) and causes the affected votes to be rejected (the verifiers return `false` rather than throwing).
