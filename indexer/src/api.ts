@@ -7,7 +7,7 @@
 
 import { createSchema, createYoga } from "graphql-yoga";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { getAllPolls, getPoll } from "./db.js";
+import { getAllPolls, getPoll, getAllRegistrations } from "./db.js";
 import { computeTally } from "./tally.js";
 import { resolveAllowedOrigin } from "./cors.js";
 import { buildFixedTree, getProof, hashLeaf } from "@ballot/core";
@@ -111,6 +111,15 @@ async function handleRest(
     return;
   }
 
+  // GET /api/registry — returns { [accountId]: commitment } map
+  if (req.method === "GET" && path === "/api/registry") {
+    const rows = getAllRegistrations() as { account_id: string; commitment: string }[];
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.account_id] = r.commitment;
+    json(200, map);
+    return;
+  }
+
   // GET /api/polls/:topicId
   // GET /api/polls/:topicId/credential-proof?credentialId=X
   //
@@ -144,7 +153,8 @@ async function handleRest(
         console.error("[api] failed to resolve eligible set:", err);
         serials = [];
       }
-      json(200, { ...pollWithTally(row), serials });
+      const leaves = row.leaves ? (JSON.parse(row.leaves as string) as { commitment: string; weight: string }[]) : [];
+      json(200, { ...pollWithTally(row), serials, leaves });
       return;
     }
 

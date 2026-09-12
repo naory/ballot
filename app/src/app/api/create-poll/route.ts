@@ -10,6 +10,7 @@
  *
  * Optional:
  *   MIRROR_NODE_URL — defaults to testnet mirror node
+ *   INDEXER_URL     — defaults to http://localhost:4000
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,12 +19,14 @@ import {
   TopicMessageSubmitTransaction,
   TopicId,
 } from "@hashgraph/sdk";
-import { buildFixedTree, hashLeaf, getRoot, RateLimiter, safeEqual } from "@ballot/core";
+import { buildFixedTree, hashCommitmentLeaf, getRoot, RateLimiter, safeEqual } from "@ballot/core";
 import { getOperatorClient } from "@/lib/hedera";
-import type { HCSPollMessage, IdosConfig } from "@ballot/core";
+import type { HCSPollMessage, IdosConfig, PollLeaf } from "@ballot/core";
 
 const MIRROR_BASE =
   process.env.MIRROR_NODE_URL || "https://testnet.mirrornode.hedera.com";
+
+const INDEXER_URL = process.env.INDEXER_URL || "http://localhost:4000";
 
 // F5 — gate poll creation so anonymous callers can't spend the operator's HBAR.
 // When CREATE_POLL_API_KEY is set, callers must send `Authorization: Bearer <key>`.
@@ -54,33 +57,21 @@ interface CreatePollBody {
   choices: string[];
   startsAt: string;
   endsAt: string;
-  /** Optional idOS credential requirement. When present, credentialIds must also be provided. */
+  /** Optional idOS credential requirement. When present, the request is rejected until F7 is implemented. */
   idosConfig?: IdosConfig;
-  /** Credential IDs snapshot (required when idosConfig is set) */
-  credentialIds?: string[];
 }
 
-async function fetchNftSerials(tokenId: string): Promise<string[]> {
-  const serials: string[] = [];
-  let url: string | null =
-    `${MIRROR_BASE}/api/v1/tokens/${tokenId}/nfts?limit=100&order=asc`;
-
+async function fetchNftHolders(tokenId: string): Promise<{ account: string }[]> {
+  const out: { account: string }[] = [];
+  let url: string | null = `${MIRROR_BASE}/api/v1/tokens/${tokenId}/nfts?limit=100&order=asc`;
   while (url) {
     const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(
-        `Mirror Node error ${res.status} fetching holders for ${tokenId}`
-      );
-    }
-    const data = (await res.json()) as {
-      nfts: { serial_number: number }[];
-      links?: { next?: string };
-    };
-    for (const nft of data.nfts) serials.push(String(nft.serial_number));
+    if (!res.ok) throw new Error(`Mirror Node ${res.status} fetching holders for ${tokenId}`);
+    const data = (await res.json()) as { nfts: { account_id: string }[]; links?: { next?: string } };
+    for (const n of data.nfts) out.push({ account: n.account_id });
     url = data.links?.next ? `${MIRROR_BASE}${data.links.next}` : null;
   }
-
-  return serials;
+  return out;
 }
 
 export async function POST(req: NextRequest) {
@@ -113,7 +104,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { title, description, tokenId, choices, startsAt, endsAt, idosConfig, credentialIds } = body;
+  const { title, description, tokenId, choices, startsAt, endsAt, idosConfig } = body;
 
   if (!title?.trim())
     return NextResponse.json({ error: "title is required" }, { status: 400 });
@@ -129,16 +120,19 @@ export async function POST(req: NextRequest) {
       { error: "startsAt and endsAt are required" },
       { status: 400 }
     );
-  if (idosConfig && (!Array.isArray(credentialIds) || credentialIds.length === 0))
+
+  // Reject credential-gated polls until F7 is implemented.
+  if (idosConfig) {
     return NextResponse.json(
-      { error: "credentialIds (non-empty array) is required when idosConfig is set" },
+      { error: "Credential-gated polls are temporarily disabled (pending F7)." },
       { status: 400 }
     );
+  }
 
-  // 1. Snapshot NFT holders from Mirror Node
-  let serials: string[];
+  // 1. Snapshot NFT holders (account) from Mirror Node
+  let holders: { account: string }[];
   try {
-    serials = await fetchNftSerials(tokenId);
+    holders = await fetchNftHolders(tokenId);
   } catch (err) {
     return NextResponse.json(
       { error: `Failed to fetch NFT holders: ${String(err)}` },
@@ -146,19 +140,49 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (serials.length === 0) {
+  if (holders.length === 0) {
     return NextResponse.json(
       { error: `No NFT holders found for token ${tokenId}` },
       { status: 400 }
     );
   }
 
-  // 2. Build Merkle tree and compute root
-  const leafHashes = serials.map((s) => hashLeaf(s));
-  const layers = buildFixedTree(leafHashes);
-  const merkleRoot = getRoot(layers);
+  // 2. Fetch identity registry from indexer
+  let registry: Record<string, string>;
+  try {
+    const regRes = await fetch(`${INDEXER_URL}/api/registry`);
+    if (!regRes.ok) throw new Error(`Indexer responded with ${regRes.status}`);
+    registry = (await regRes.json()) as Record<string, string>;
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Failed to fetch identity registry: ${String(err)}` },
+      { status: 502 }
+    );
+  }
 
-  // 3. Create Hedera client
+  // 3. Build eligible leaf set: holders present in registry, deduped by commitment
+  const seen = new Set<string>();
+  const leaves: PollLeaf[] = [];
+  for (const { account } of holders) {
+    const commitment = registry[account];
+    if (commitment === undefined) continue;
+    if (seen.has(commitment)) continue;
+    seen.add(commitment);
+    leaves.push({ commitment, weight: "1" });
+  }
+
+  if (leaves.length === 0) {
+    return NextResponse.json(
+      { error: "No registered holders for this token. Voters must register before the snapshot." },
+      { status: 400 }
+    );
+  }
+
+  // 4. Build Merkle tree over commitment leaves and compute root
+  const leafHashes = leaves.map((l) => hashCommitmentLeaf(BigInt(l.commitment), BigInt(l.weight)));
+  const merkleRoot = getRoot(buildFixedTree(leafHashes));
+
+  // 5. Create Hedera client
   let client;
   try {
     client = getOperatorClient();
@@ -175,7 +199,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Create a new HCS topic for this poll
+  // 6. Create a new HCS topic for this poll
   let topicId: string;
   try {
     // Lock the topic with a submit key so only this operator can publish to it
@@ -195,19 +219,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 5. Publish poll metadata (including snapshot serials) to the new topic
+  // 7. Publish poll metadata (including commitment leaves) to the new topic
   const message: HCSPollMessage = {
-    type:          "poll_created",
-    title:         title.trim(),
-    description:   description?.trim() || undefined,
-    choices:       choices.map((c) => c.trim()).filter(Boolean),
+    type:        "poll_created",
+    title:       title.trim(),
+    description: description?.trim() || undefined,
+    choices:     choices.map((c) => c.trim()).filter(Boolean),
     tokenId,
     merkleRoot,
     startsAt,
     endsAt,
-    serials,
-    idosConfig:    idosConfig ?? undefined,
-    credentialIds: credentialIds ?? undefined,
+    leaves,
   };
 
   try {
@@ -225,6 +247,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     topicId,
     merkleRoot,
-    holderCount: serials.length,
+    holderCount: leaves.length,
   });
 }

@@ -164,3 +164,31 @@ export function verifyProof(
 
   return current.toString() === root;
 }
+
+/** Leaf hash for a commitment-weight pair: Poseidon(commitment, weight). */
+export function hashCommitmentLeaf(commitment: bigint, weight: bigint): bigint {
+  return hashPair(commitment, weight);
+}
+
+/**
+ * Build circuit-ready Merkle inputs for a voter's own commitment within a poll's
+ * eligible leaf set. Leaves are hashed as Poseidon(commitment, weight). Runs
+ * client-side so the voter never reveals which leaf is theirs.
+ * Throws if `myCommitment` is not present.
+ */
+export function buildCommitmentMerkleProof(
+  leaves: { commitment: string; weight: string }[],
+  myCommitment: string
+): { merkleRoot: string; leafIndex: number; pathElements: string[]; pathIndices: number[] } {
+  const idx = leaves.findIndex((l) => l.commitment === myCommitment);
+  if (idx === -1) throw new Error(`Commitment ${myCommitment} is not in the eligible set`);
+  const leafHashes = leaves.map((l) => hashCommitmentLeaf(BigInt(l.commitment), BigInt(l.weight)));
+  const layers = buildFixedTree(leafHashes);
+  const rawProof = getProof(layers, idx);
+  return {
+    merkleRoot: getRoot(layers),
+    leafIndex: idx,
+    pathElements: rawProof.map((p) => p.sibling),
+    pathIndices: rawProof.map((p) => (p.direction === "left" ? 1 : 0)),
+  };
+}

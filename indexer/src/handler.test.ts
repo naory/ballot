@@ -12,11 +12,13 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import type { ZKProof } from "@ballot/core";
+import { pollIdFromTopic, registrationMessage } from "@ballot/core";
+import { PrivateKey } from "@hashgraph/sdk";
 
 process.env.DB_PATH = ":memory:";
 
 const { handleMessage, parseConsensusTimestamp } = await import("./handler.js");
-const { insertPoll, getTally, getPoll } = await import("./db.js");
+const { insertPoll, getTally, getPoll, getRegistration: dbGetRegistration } = await import("./db.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -59,14 +61,17 @@ const basePoll = {
   endsAt:    ENDS_AT,
 };
 
+const POLL_ID = pollIdFromTopic(POLL_TOPIC).toString();
+
 function makeVote(nullifier: string, choiceIndex = 0) {
   return {
     type: "vote" as const,
     pollTopicId: POLL_TOPIC,
     choiceIndex,
     nullifier,
+    weight: "1",
     proof: fakeProof,
-    publicSignals: ["777", nullifier, String(choiceIndex)],
+    publicSignals: ["777", nullifier, String(choiceIndex), POLL_ID, "1"],
   };
 }
 
@@ -336,16 +341,17 @@ describe("handleMessage — credential path binding (F3)", () => {
     expect(total()).toBe(before);
   });
 
-  it("accepts a well-formed credential vote", async () => {
+  it("rejects a credential-gated poll vote (disabled pending F7)", async () => {
+    // Credential-gated polls are disabled: any vote targeting a poll with idosConfig
+    // must be rejected regardless of proof validity.
     const before = total();
     const vote = makeCredentialVote("cp-null-3", "cp-cred-3");
     await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysValid);
-    expect(total()).toBe(before + 1);
+    expect(total()).toBe(before);
   });
 
-  it("rejects a credential vote with an invalid credential proof", async () => {
-    // Exercises the verifyCredential(false) path — the credential-path analogue
-    // of the base "invalid ZK proof" test.
+  it("rejects a credential-gated poll vote even with invalid proof (disabled pending F7)", async () => {
+    // Credential path disabled — rejection is at idosConfig check, not proof verification.
     const before = total();
     const vote = makeCredentialVote("cp-null-4", "cp-cred-4");
     await handleMessage(CRED_TOPIC, vote, TS_DURING, noop, alwaysValid, alwaysInvalid);
@@ -368,8 +374,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 0,
       nullifier: "f3-envelope-null",              // envelope value
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["777", "f3-proven-null", "0"], // proof proves a different nullifier
+      publicSignals: ["777", "f3-proven-null", "0", POLL_ID, "1"], // proof proves a different nullifier
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
@@ -382,8 +389,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 1,                              // envelope says choice 1
       nullifier: "f3-choice",
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["777", "f3-choice", "0"],    // proof proves choice 0
+      publicSignals: ["777", "f3-choice", "0", POLL_ID, "1"],    // proof proves choice 0
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
@@ -396,8 +404,9 @@ describe("handleMessage — publicSignals binding (F3)", () => {
       pollTopicId: POLL_TOPIC,
       choiceIndex: 0,
       nullifier: "f3-root",
+      weight: "1",
       proof: fakeProof,
-      publicSignals: ["999", "f3-root", "0"],      // proof is against a different root
+      publicSignals: ["999", "f3-root", "0", POLL_ID, "1"],      // proof is against a different root
     };
     await handleMessage(POLL_TOPIC, msg, TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before);
@@ -407,5 +416,77 @@ describe("handleMessage — publicSignals binding (F3)", () => {
     const before = total();
     await handleMessage(POLL_TOPIC, makeVote("f3-ok", 0), TS_DURING, noop, alwaysValid);
     expect(total()).toBe(before + 1);
+  });
+});
+
+// ── register (F1) ────────────────────────────────────────────────────────────
+
+describe("handleMessage — register (F1)", () => {
+  const key = PrivateKey.generateED25519();
+  const ACCOUNT = "0.0.8888";
+  const COMMIT = "55";
+  const lookup = async (id: string) => (id === ACCOUNT ? key.publicKey.toStringDer() : null);
+
+  it("records a valid registration", async () => {
+    const sig = Buffer.from(key.sign(Buffer.from(registrationMessage(ACCOUNT, COMMIT), "utf-8"))).toString("hex");
+    await handleMessage(
+      "0.0.registry",
+      { type: "register", accountId: ACCOUNT, commitment: COMMIT, signature: sig },
+      "1000.0", noop, alwaysValid, alwaysValid,
+      { accountKeyLookup: lookup }
+    );
+    expect(dbGetRegistration(ACCOUNT)?.commitment).toBe(COMMIT);
+  });
+
+  it("ignores an invalid registration", async () => {
+    await handleMessage(
+      "0.0.registry",
+      { type: "register", accountId: "0.0.7777", commitment: "9", signature: "zz" },
+      "1001.0", noop, alwaysValid, alwaysValid,
+      { accountKeyLookup: lookup }
+    );
+    expect(dbGetRegistration("0.0.7777")).toBeUndefined();
+  });
+});
+
+// ── vote — v2 binding (F1/F2) ─────────────────────────────────────────────────
+// vote_v2 public signals: [merkleRoot, nullifier, choiceIndex, pollId, weight]
+// pollId is recomputed server-side (never trusted from the envelope).
+// weight must match publicSignals[4] and is stored/tallied.
+
+describe("handleMessage — vote_v2 binding (F1/F2)", () => {
+  const TOPIC = "0.0.6100";
+  const POLL_ID = pollIdFromTopic(TOPIC).toString();
+  const total = () => getTally(TOPIC).reduce((s, r) => s + r.count, 0);
+
+  beforeAll(() => {
+    insertPoll({
+      topicId: TOPIC, title: "v2", choices: ["Yes", "No"], tokenId: "0.0.1",
+      merkleRoot: "777", startsAt: STARTS_AT, endsAt: ENDS_AT,
+    });
+  });
+
+  function v2Vote(nullifier: string, weight = "1", overrides: Partial<Record<"root"|"choice"|"pollId"|"weight", string>> = {}) {
+    return {
+      type: "vote" as const, pollTopicId: TOPIC, choiceIndex: 0, nullifier, weight,
+      proof: fakeProof,
+      publicSignals: [overrides.root ?? "777", nullifier, overrides.choice ?? "0", overrides.pollId ?? POLL_ID, overrides.weight ?? weight],
+    };
+  }
+
+  it("accepts a well-formed v2 vote and tallies its weight", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-a", "3"), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before + 3);
+  });
+  it("rejects a pollId mismatch (cross-poll replay)", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-b", "1", { pollId: "999999" }), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
+  });
+  it("rejects a weight/publicSignals[4] mismatch", async () => {
+    const before = total();
+    await handleMessage(TOPIC, v2Vote("v2-c", "5", { weight: "1" }), TS_DURING, noop, alwaysValid);
+    expect(total()).toBe(before);
   });
 });

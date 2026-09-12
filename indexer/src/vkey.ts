@@ -21,7 +21,7 @@ export class VerificationKeyUnavailableError extends Error {
 export function voteVkeyPath(): string {
   return (
     process.env.VKEY_PATH ||
-    path.join(process.cwd(), "..", "circuits", "build", "vote.vkey.json")
+    path.join(process.cwd(), "..", "circuits", "build", "vote_v2.vkey.json")
   );
 }
 

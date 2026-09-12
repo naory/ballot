@@ -8,6 +8,8 @@ import {
   getProof,
   verifyProof,
   buildCircuitMerkleProof,
+  hashCommitmentLeaf,
+  buildCommitmentMerkleProof,
   TREE_DEPTH,
 } from "./merkle.js";
 import { poseidon1, poseidon2 } from "poseidon-lite";
@@ -196,5 +198,38 @@ describe("buildCircuitMerkleProof", () => {
 
   it("throws when the target is not in the set", () => {
     expect(() => buildCircuitMerkleProof(serials, "999")).toThrow(/not in the eligible set/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCommitmentMerkleProof — commitment-weight leaf hashing
+// ---------------------------------------------------------------------------
+
+describe("buildCommitmentMerkleProof", () => {
+  const leaves = [
+    { commitment: "11", weight: "1" },
+    { commitment: "22", weight: "1" },
+    { commitment: "33", weight: "1" },
+  ];
+
+  function rootFromInputs(commitment: string, weight: string, pathElements: string[], pathIndices: number[]) {
+    let cur = hashCommitmentLeaf(BigInt(commitment), BigInt(weight));
+    for (let i = 0; i < pathElements.length; i++) {
+      const sib = BigInt(pathElements[i]);
+      cur = pathIndices[i] === 0 ? hashPair(cur, sib) : hashPair(sib, cur);
+    }
+    return cur.toString();
+  }
+
+  it("authenticates every member against the root", () => {
+    for (const l of leaves) {
+      const p = buildCommitmentMerkleProof(leaves, l.commitment);
+      expect(p.pathElements).toHaveLength(TREE_DEPTH);
+      expect(rootFromInputs(l.commitment, l.weight, p.pathElements, p.pathIndices)).toBe(p.merkleRoot);
+    }
+  });
+
+  it("throws for a non-member commitment", () => {
+    expect(() => buildCommitmentMerkleProof(leaves, "999")).toThrow(/not in the eligible set/);
   });
 });

@@ -12,7 +12,7 @@ import { beforeEach, describe, it, expect } from "vitest";
 process.env.DB_PATH = ":memory:";
 
 // Dynamic import so that DB_PATH is set before module initialisation
-const { insertPoll, insertVote, getTally, getAllPolls, getPoll } = await import(
+const { insertPoll, insertVote, getTally, getAllPolls, getPoll, upsertRegistration, getRegistration, getAllRegistrations } = await import(
   "./db.js"
 );
 
@@ -39,6 +39,19 @@ describe("insertPoll / getPoll / getAllPolls", () => {
     insertPoll({ ...basePoll, topicId: "0.0.1002", serials: ["1", "2", "3"] });
     const row = getPoll("0.0.1002") as Record<string, unknown>;
     expect(JSON.parse(row.serials as string)).toEqual(["1", "2", "3"]);
+  });
+
+  it("stores leaves as JSON and round-trips them", () => {
+    const leaves = [{ commitment: "111", weight: "1" }, { commitment: "222", weight: "2" }];
+    insertPoll({ ...basePoll, topicId: "0.0.1005", leaves });
+    const row = getPoll("0.0.1005") as Record<string, unknown>;
+    expect(JSON.parse(row.leaves as string)).toEqual(leaves);
+  });
+
+  it("leaves is null when omitted", () => {
+    insertPoll({ ...basePoll, topicId: "0.0.1006" });
+    const row = getPoll("0.0.1006") as Record<string, unknown>;
+    expect(row.leaves).toBeNull();
   });
 
   it("stores description when provided", () => {
@@ -134,5 +147,30 @@ describe("insertVote / getTally", () => {
   it("tally is empty for a poll with no votes", () => {
     insertPoll({ ...basePoll, topicId: "0.0.2002" });
     expect(getTally("0.0.2002")).toEqual([]);
+  });
+});
+
+describe("registrations", () => {
+  it("upserts latest-wins by consensus ts and reads back", () => {
+    upsertRegistration({ accountId: "0.0.5", commitment: "aaa", consensusTs: "100.0" });
+    upsertRegistration({ accountId: "0.0.5", commitment: "bbb", consensusTs: "200.0" });
+    expect(getRegistration("0.0.5")?.commitment).toBe("bbb");
+    // stale update ignored
+    upsertRegistration({ accountId: "0.0.5", commitment: "ccc", consensusTs: "150.0" });
+    expect(getRegistration("0.0.5")?.commitment).toBe("bbb");
+    expect(getAllRegistrations().some((r) => r.account_id === "0.0.5")).toBe(true);
+  });
+});
+
+describe("weighted tally", () => {
+  it("sums weight per choice", () => {
+    insertPoll({
+      topicId: "0.0.7", title: "w", choices: ["A", "B"], tokenId: "0.0.1",
+      merkleRoot: "0", startsAt: "2026-01-01T00:00:00Z", endsAt: "2027-01-01T00:00:00Z",
+    });
+    insertVote({ topicId: "0.0.7", choiceIndex: 0, nullifier: "n1", weight: "3", proof: "{}", publicSignals: [] });
+    insertVote({ topicId: "0.0.7", choiceIndex: 0, nullifier: "n2", weight: "2", proof: "{}", publicSignals: [] });
+    const rows = getTally("0.0.7");
+    expect(rows.find((r) => r.choiceIndex === 0)?.count).toBe(5);
   });
 });

@@ -1,94 +1,90 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { generateVoteProof } from "@/lib/zk";
-import { getReadOnlyClient, submitVote } from "@/lib/hedera";
-import { buildCircuitMerkleProof } from "@ballot/core";
+import { useState } from "react";
+import { getIdentityProvider } from "@/lib/identity";
+import { generateVoteProofV2 } from "@/lib/zk";
+import { submitVote } from "@/lib/hedera";
+import { pollIdFromTopic } from "@ballot/core";
+import { getWalletSigner } from "@/lib/wallet";
 import type { ZKProof } from "@ballot/core";
 
 interface VoteFormProps {
   topicId: string;
   choices: string[];
   merkleRoot: string;
-  /** Public eligible set — used to build the Merkle proof in-browser (F4). */
-  serials: string[];
+  /** Eligible identity commitments + weights for this poll (F1/F2). */
+  leaves: { commitment: string; weight: string }[];
 }
 
 type Step =
   | { kind: "idle" }
   | { kind: "proving" }
-  | { kind: "proved"; proof: ZKProof; publicSignals: string[]; nullifier: string }
-  | { kind: "submitting"; proof: ZKProof; publicSignals: string[]; nullifier: string }
+  | { kind: "proved"; proof: ZKProof; publicSignals: string[]; nullifier: string; weight: string }
+  | { kind: "submitting"; proof: ZKProof; publicSignals: string[]; nullifier: string; weight: string }
   | { kind: "submitted"; nullifier: string }
   | { kind: "error"; message: string };
 
-const SECRET_KEY = (topicId: string, serial: string) =>
-  `ballot_secret_${topicId}_${serial}`;
-
-/** Retrieve or generate a stable secret for (topicId, serial). Stored in localStorage. */
-function getOrCreateSecret(topicId: string, serial: string): string {
-  const key = SECRET_KEY(topicId, serial);
-  const stored = localStorage.getItem(key);
-  if (stored) return stored;
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  // Keep within BN254 field (< 2^254) — drop top 2 bits
-  const secret = (BigInt("0x" + hex) >> 2n).toString();
-  localStorage.setItem(key, secret);
-  return secret;
-}
-
-export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProps) {
+export function VoteForm({ topicId, choices, merkleRoot, leaves }: VoteFormProps) {
   const [selected, setSelected] = useState<number | null>(null);
-  const [serial, setSerial] = useState("");
   const [step, setStep] = useState<Step>({ kind: "idle" });
 
-  // Warn if circuit artifacts aren't present (dev convenience)
-  const [artifactsPresent, setArtifactsPresent] = useState<boolean | null>(null);
-  useEffect(() => {
-    fetch("/circuits/vote_js/vote.wasm", { method: "HEAD" })
-      .then((r) => setArtifactsPresent(r.ok))
-      .catch(() => setArtifactsPresent(false));
-  }, []);
+  const wallet = getWalletSigner();
+
+  // Wallet not connected — show disabled state, keep choices visible
+  if (wallet === null) {
+    return (
+      <div className="space-y-4">
+        {/* Choice list — visible but submission disabled */}
+        <div className="space-y-2">
+          {choices.map((choice, i) => (
+            <button
+              key={i}
+              disabled
+              className="w-full rounded-lg border border-gray-700 px-4 py-3 text-left opacity-50"
+            >
+              {choice}
+            </button>
+          ))}
+        </div>
+        <p className="rounded-lg border border-yellow-800 bg-yellow-950 px-3 py-2 text-sm text-yellow-400">
+          Connect a Hedera wallet to vote.
+        </p>
+      </div>
+    );
+  }
 
   const handleGenerateProof = async () => {
-    if (selected === null || !serial.trim()) return;
+    if (selected === null) return;
 
     setStep({ kind: "proving" });
     try {
-      const trimmedSerial = serial.trim();
+      const provider = getIdentityProvider(wallet.accountId, wallet.signMessage);
+      const commitment = await provider.getCommitment();
 
-      // 1. Build the Merkle proof in-browser from the public eligible set.
-      //    The serial never leaves the device, so the indexer cannot correlate
-      //    the voter with their vote (F4).
-      let proofData: { merkleRoot: string; pathElements: string[]; pathIndices: number[] };
-      try {
-        proofData = buildCircuitMerkleProof(serials, trimmedSerial);
-      } catch {
-        throw new Error(`Serial ${trimmedSerial} is not in the eligible set for this poll.`);
-      }
-
-      // Sanity-check: the locally computed root must match the poll's committed root.
-      if (proofData.merkleRoot !== merkleRoot) {
+      // Eligibility check: must be in the poll's committed leaf set
+      if (!leaves.some((l) => l.commitment === commitment)) {
         throw new Error(
-          "Merkle root mismatch — the eligible set may have changed. Refresh the page."
+          "You're not eligible for this poll — register before the snapshot, or you didn't hold the token at snapshot."
         );
       }
 
-      // 2. Retrieve or generate a stable secret for this (topicId, serial) pair
-      const secret = getOrCreateSecret(topicId, trimmedSerial);
+      const secret = await provider.getIdentitySecret();
+      const pollId = pollIdFromTopic(topicId);
 
-      // 3. Generate ZK proof client-side (requires compiled circuit artifacts)
-      const { proof, publicSignals, nullifier } = await generateVoteProof({
-        merkleRoot:   proofData.merkleRoot,
-        serial:       trimmedSerial,
-        secret,
-        pathElements: proofData.pathElements,
-        pathIndices:  proofData.pathIndices,
-        choiceIndex:  selected,
+      const { proof, publicSignals, nullifier, weight } = await generateVoteProofV2({
+        identitySecret: secret,
+        leaves,
+        myCommitment: commitment,
+        choiceIndex: selected,
+        pollId,
       });
 
-      setStep({ kind: "proved", proof, publicSignals, nullifier });
+      // Merkle root mismatch guard: publicSignals[0] is the root the proof was built against
+      if (publicSignals[0] !== merkleRoot) {
+        throw new Error("Merkle root mismatch — the eligible set may have changed. Refresh the page.");
+      }
+
+      setStep({ kind: "proved", proof, publicSignals, nullifier, weight });
     } catch (err) {
       setStep({
         kind: "error",
@@ -99,18 +95,16 @@ export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProp
 
   const handleSubmit = async () => {
     if (step.kind !== "proved") return;
-    const { proof, publicSignals, nullifier } = step;
+    const { proof, publicSignals, nullifier, weight } = step;
 
-    setStep({ kind: "submitting", proof, publicSignals, nullifier });
+    setStep({ kind: "submitting", proof, publicSignals, nullifier, weight });
     try {
-      // 4. Submit the vote message to the HCS topic
-      // Requires a wallet-connected Hedera client (Phase 3: HashConnect integration)
-      const client = getReadOnlyClient();
-      await submitVote(client, topicId, {
-        type:         "vote",
-        pollTopicId:  topicId,
-        choiceIndex:  selected!,
+      await submitVote(wallet.client, topicId, {
+        type: "vote",
+        pollTopicId: topicId,
+        choiceIndex: selected!,
         nullifier,
+        weight,
         proof,
         publicSignals,
       });
@@ -119,10 +113,7 @@ export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProp
     } catch (err) {
       setStep({
         kind: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "HCS submission failed. A wallet connection (HashConnect) is required.",
+        message: err instanceof Error ? err.message : String(err),
       });
     }
   };
@@ -130,7 +121,6 @@ export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProp
   const reset = () => {
     setStep({ kind: "idle" });
     setSelected(null);
-    setSerial("");
   };
 
   // --- Render ---
@@ -187,38 +177,11 @@ export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProp
         ))}
       </div>
 
-      {/* Serial input */}
-      {!isProved && (
-        <div>
-          <label className="mb-1 block text-sm text-gray-400">
-            Your NFT serial number
-          </label>
-          <input
-            type="text"
-            value={serial}
-            disabled={busy}
-            onChange={(e) => setSerial(e.target.value)}
-            placeholder="e.g. 42"
-            className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:opacity-50"
-          />
-        </div>
-      )}
-
-      {/* Circuit artifact warning */}
-      {artifactsPresent === false && (
-        <p className="rounded-lg border border-yellow-800 bg-yellow-950 px-3 py-2 text-xs text-yellow-400">
-          Circuit artifacts not found. Run{" "}
-          <code>circuits/scripts/compile.sh</code> +{" "}
-          <code>scripts/setup.sh</code> and copy outputs to{" "}
-          <code>app/public/circuits/</code>.
-        </p>
-      )}
-
       {/* Step 1 — Generate proof */}
       {!isProved && (
         <button
           onClick={handleGenerateProof}
-          disabled={selected === null || !serial.trim() || busy}
+          disabled={selected === null || busy}
           className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium hover:bg-indigo-500 disabled:opacity-40"
         >
           {isProving ? "Generating ZK proof…" : "Generate Proof"}
@@ -237,9 +200,6 @@ export function VoteForm({ topicId, choices, merkleRoot, serials }: VoteFormProp
           >
             Submit Vote to HCS
           </button>
-          <p className="text-xs text-gray-500">
-            Submitting requires a connected Hedera wallet (HashConnect — Phase 3).
-          </p>
           <button onClick={reset} className="text-xs text-gray-500 underline">
             Cancel
           </button>

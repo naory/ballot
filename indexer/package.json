@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ballot/core": "workspace:*",
+    "@hashgraph/sdk": "^2.53.0",
     "better-sqlite3": "^11.7.0",
     "graphql": "^16.9.0",
     "graphql-yoga": "^5.10.0",
